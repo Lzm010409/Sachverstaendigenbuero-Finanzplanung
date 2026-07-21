@@ -123,8 +123,10 @@ export interface SevdeskOpenItem {
   dueDate: Date;
 }
 
+// Bereits bezahlter Anteil eines Belegs/Rechnung. sevDesk liefert dies in
+// `paidAmount` (ggf. auch sumGrossPaid/sumPaid).
 function paidCents(o: RawSevObject, gross: number): number {
-  const paid = toNumberOrNull(o.sumGrossPaid ?? o.paidAmount ?? o.sumPaid);
+  const paid = toNumberOrNull(o.paidAmount ?? o.sumGrossPaid ?? o.sumPaid);
   if (paid == null) return 0;
   return Math.min(Math.round(Math.abs(paid) * 100), Math.round(Math.abs(gross) * 100));
 }
@@ -156,9 +158,12 @@ export async function fetchOpenInvoices(token: string): Promise<SevdeskOpenItem[
   const out: SevdeskOpenItem[] = [];
   for (const o of objs) {
     const status = Number(o.status ?? 0);
-    if (status < 200 || status >= 1000) continue; // Entwürfe/bezahlte überspringen
+    if (status < 200) continue; // Entwürfe überspringen
     const amount = toNumberOrNull(o.sumGross ?? o.sumgross);
     if (amount == null || amount === 0) continue;
+    const grossCents = Math.round(Math.abs(amount) * 100);
+    const paid = paidCents(o, amount);
+    if (grossCents - paid <= 0) continue; // vollständig bezahlt -> nicht offen
     const date = firstDate(o, ["invoiceDate", "deliveryDate", "createDate"]) ?? startOfDayUTC(new Date());
     const timeToPay = Number(o.timeToPay ?? 0);
     const due = firstDate(o, ["payDate"]) ?? addDaysLocal(date, Number.isFinite(timeToPay) ? timeToPay : 0);
@@ -168,8 +173,8 @@ export async function fetchOpenInvoices(token: string): Promise<SevdeskOpenItem[
       kind: "RECEIVABLE",
       counterparty: firstStr(o, ["contact", "contactName", "header"]) || "Rechnung",
       reference: firstStr(o, ["invoiceNumber", "header"]) || null,
-      amountCents: Math.round(Math.abs(amount) * 100),
-      paidAmountCents: paidCents(o, amount),
+      amountCents: grossCents,
+      paidAmountCents: paid,
       dueDate: due,
     });
   }
@@ -182,9 +187,12 @@ export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[
   const out: SevdeskOpenItem[] = [];
   for (const o of objs) {
     const status = Number(o.status ?? 0);
-    if (status < 100 || status >= 1000) continue; // Entwürfe/bezahlte überspringen
+    if (status < 100) continue; // Entwürfe überspringen
     const amount = toNumberOrNull(o.sumGross ?? o.sumgross);
     if (amount == null || amount === 0) continue;
+    const grossCents = Math.round(Math.abs(amount) * 100);
+    const paid = paidCents(o, amount);
+    if (grossCents - paid <= 0) continue; // vollständig bezahlt -> nicht offen
     const isIncome = String(o.creditDebit ?? "D").toUpperCase() === "C";
     const date = firstDate(o, ["voucherDate", "createDate"]) ?? startOfDayUTC(new Date());
     const due = firstDate(o, ["payDate", "deliveryDate"]) ?? date;
@@ -194,8 +202,8 @@ export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[
       kind: isIncome ? "RECEIVABLE" : "PAYABLE",
       counterparty: firstStr(o, ["supplier", "supplierName", "description", "creditDebit"]) || "Beleg",
       reference: firstStr(o, ["voucherNumber", "description"]) || null,
-      amountCents: Math.round(Math.abs(amount) * 100),
-      paidAmountCents: paidCents(o, amount),
+      amountCents: grossCents,
+      paidAmountCents: paid,
       dueDate: due,
     });
   }

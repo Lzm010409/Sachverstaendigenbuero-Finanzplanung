@@ -1,6 +1,8 @@
-// Diagnose: ruft echte sevDesk-Rechnungen/Belege ab und loggt die für das
-// Mapping relevanten Felder (Status, Beträge, Datumsangaben) – OHNE Namen.
+// Verifikations-Lauf: prüft mit ECHTEN sevDesk-Daten, ob nach dem Fix noch
+// fälschlich "offene"/überfällige Belege auftauchen. Loggt KEINE Namen.
 // Läuft nur, wenn SEVDESK_DEBUG=true. Danach wieder entfernen.
+
+import { fetchOpenInvoices, fetchOpenVouchers } from "../src/lib/sevdesk";
 
 const BASE = "https://my.sevdesk.de/api/v1";
 
@@ -9,17 +11,33 @@ async function get(path: string, token: string): Promise<Record<string, unknown>
     headers: { Authorization: token, Accept: "application/json" },
   });
   if (!res.ok) {
-    console.log(`[sevdesk-debug] ${path} -> HTTP ${res.status}: ${(await res.text()).slice(0, 160)}`);
+    console.log(`[sevdesk-debug] ${path} -> HTTP ${res.status}`);
     return [];
   }
   const data = (await res.json()) as { objects?: Record<string, unknown>[] };
   return Array.isArray(data.objects) ? data.objects : [];
 }
 
-function pick(o: Record<string, unknown>, keys: string[]) {
-  const r: Record<string, unknown> = {};
-  for (const k of keys) if (k in o) r[k] = o[k];
-  return r;
+function cents(v: unknown): number {
+  const n = Number(String(v ?? "0").replace(",", "."));
+  return Number.isFinite(n) ? Math.round(Math.abs(n) * 100) : 0;
+}
+
+// Zählt, wie viele bezahlte (Status 1000) Belege einen Rundungs-Restbetreag zeigen.
+function scanPaidWithRemainder(objs: Record<string, unknown>[], label: string) {
+  let paid = 0;
+  let paidWithRemainder = 0;
+  let withDeadline = 0;
+  for (const o of objs) {
+    if (Number(o.status ?? 0) < 1000) continue;
+    paid++;
+    const rem = cents(o.sumGross) - Math.min(cents(o.paidAmount), cents(o.sumGross));
+    if (rem > 0) paidWithRemainder++;
+    if (o.paymentDeadline) withDeadline++;
+  }
+  console.log(
+    `[sevdesk-debug] ${label}: bezahlt(Status1000)=${paid}, davon mit Restbetrag>0=${paidWithRemainder}, mit paymentDeadline=${withDeadline}`,
+  );
 }
 
 async function main() {
@@ -28,46 +46,38 @@ async function main() {
     console.log("[sevdesk-debug] kein SEVDESK_API_TOKEN");
     return;
   }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  const invoices = await get("/Invoice?limit=15", token);
-  console.log(`[sevdesk-debug] Invoices: ${invoices.length}`);
-  if (invoices[0]) console.log("[sevdesk-debug] Invoice-KEYS:", Object.keys(invoices[0]).join(","));
-  const invStatus: Record<string, number> = {};
-  for (const o of invoices) {
-    const s = String(o.status);
-    invStatus[s] = (invStatus[s] ?? 0) + 1;
-  }
-  console.log("[sevdesk-debug] Invoice-Status-Verteilung:", JSON.stringify(invStatus));
-  for (const o of invoices.slice(0, 6)) {
-    console.log(
-      "[sevdesk-debug] INV",
-      JSON.stringify(
-        pick(o, [
-          "id", "status", "invoiceDate", "timeToPay", "payDate", "dueDate",
-          "sumGross", "paidAmount", "sumGrossPaid", "sumPaid", "paidPartially", "isPaid",
-        ]),
-      ),
-    );
-  }
+  // Rohdaten scannen: gibt es bezahlte Belege mit 0,01-Restbetrag? (=alte Bug-Ursache)
+  const rawInv = await get("/Invoice?limit=1000", token);
+  const rawVou = await get("/Voucher?limit=1000", token);
+  scanPaidWithRemainder(rawInv, "Invoices");
+  scanPaidWithRemainder(rawVou, "Vouchers");
 
-  const vouchers = await get("/Voucher?limit=15", token);
-  console.log(`[sevdesk-debug] Vouchers: ${vouchers.length}`);
-  if (vouchers[0]) console.log("[sevdesk-debug] Voucher-KEYS:", Object.keys(vouchers[0]).join(","));
-  const vStatus: Record<string, number> = {};
-  for (const o of vouchers) {
-    const s = String(o.status);
-    vStatus[s] = (vStatus[s] ?? 0) + 1;
-  }
-  console.log("[sevdesk-debug] Voucher-Status-Verteilung:", JSON.stringify(vStatus));
-  for (const o of vouchers.slice(0, 6)) {
+  // Fix verifizieren: die realen Mapping-Funktionen laufen lassen.
+  const receivables = await fetchOpenInvoices(token);
+  const payables = await fetchOpenVouchers(token);
+
+  const overdueR = receivables.filter((i) => i.dueDate < today);
+  const overdueP = payables.filter((i) => i.dueDate < today);
+  console.log(
+    `[sevdesk-debug] Offene Forderungen=${receivables.length} (überfällig=${overdueR.length}), ` +
+      `Offene Verbindlichkeiten=${payables.length} (überfällig=${overdueP.length})`,
+  );
+
+  // Stichprobe: keiner der als offen ausgewiesenen Posten darf ein winziger
+  // Restbetrag (<= 2 Cent) sein.
+  const tinyR = receivables.filter((i) => i.amountCents - i.paidAmountCents <= 2);
+  const tinyP = payables.filter((i) => i.amountCents - i.paidAmountCents <= 2);
+  console.log(
+    `[sevdesk-debug] Mini-Restbeträge (<=2ct) faelschlich offen: Forderungen=${tinyR.length}, Verbindlichkeiten=${tinyP.length}`,
+  );
+
+  for (const i of overdueP.slice(0, 5)) {
     console.log(
-      "[sevdesk-debug] VOU",
-      JSON.stringify(
-        pick(o, [
-          "id", "status", "voucherDate", "payDate", "dueDate", "deliveryDate",
-          "sumGross", "paidAmount", "sumGrossPaid", "creditDebit", "paidPartially",
-        ]),
-      ),
+      `[sevdesk-debug] überfällige Verbindlichkeit: due=${i.dueDate.toISOString().slice(0, 10)} ` +
+        `offen=${((i.amountCents - i.paidAmountCents) / 100).toFixed(2)} ref=${i.reference ?? "-"}`,
     );
   }
   console.log("[sevdesk-debug] fertig.");

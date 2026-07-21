@@ -123,6 +123,15 @@ export interface SevdeskOpenItem {
   dueDate: Date;
 }
 
+// Restbetrag bis zu dem ein Beleg als "abgeschlossen" gilt. sevDesk rundet
+// intern teils auf den Cent, sodass vollständig bezahlte Belege einen Rest von
+// 0,01 € zeigen können – dieser darf nicht als offener Posten auftauchen.
+const SETTLED_TOLERANCE_CENTS = 2;
+
+// Status 1000 = von sevDesk als vollständig bezahlt markiert (sowohl Rechnung
+// als auch Beleg). Solche Belege sind nie offen.
+const STATUS_PAID = 1000;
+
 // Bereits bezahlter Anteil eines Belegs/Rechnung. sevDesk liefert dies in
 // `paidAmount` (ggf. auch sumGrossPaid/sumPaid).
 function paidCents(o: RawSevObject, gross: number): number {
@@ -159,14 +168,17 @@ export async function fetchOpenInvoices(token: string): Promise<SevdeskOpenItem[
   for (const o of objs) {
     const status = Number(o.status ?? 0);
     if (status < 200) continue; // Entwürfe überspringen
+    if (status >= STATUS_PAID) continue; // von sevDesk als bezahlt markiert
     const amount = toNumberOrNull(o.sumGross ?? o.sumgross);
     if (amount == null || amount === 0) continue;
     const grossCents = Math.round(Math.abs(amount) * 100);
     const paid = paidCents(o, amount);
-    if (grossCents - paid <= 0) continue; // vollständig bezahlt -> nicht offen
+    if (grossCents - paid <= SETTLED_TOLERANCE_CENTS) continue; // (nahezu) vollständig bezahlt
     const date = firstDate(o, ["invoiceDate", "deliveryDate", "createDate"]) ?? startOfDayUTC(new Date());
+    // Fälligkeit = Rechnungsdatum + Zahlungsziel (timeToPay). `payDate` ist das
+    // tatsächliche Zahldatum (bei offenen Rechnungen null) – nicht die Fälligkeit.
     const timeToPay = Number(o.timeToPay ?? 0);
-    const due = firstDate(o, ["payDate"]) ?? addDaysLocal(date, Number.isFinite(timeToPay) ? timeToPay : 0);
+    const due = addDaysLocal(date, Number.isFinite(timeToPay) ? timeToPay : 0);
     out.push({
       externalId: String(o.id),
       source: "sevdesk-invoice",
@@ -188,14 +200,17 @@ export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[
   for (const o of objs) {
     const status = Number(o.status ?? 0);
     if (status < 100) continue; // Entwürfe überspringen
+    if (status >= STATUS_PAID) continue; // von sevDesk als bezahlt markiert
     const amount = toNumberOrNull(o.sumGross ?? o.sumgross);
     if (amount == null || amount === 0) continue;
     const grossCents = Math.round(Math.abs(amount) * 100);
     const paid = paidCents(o, amount);
-    if (grossCents - paid <= 0) continue; // vollständig bezahlt -> nicht offen
+    if (grossCents - paid <= SETTLED_TOLERANCE_CENTS) continue; // (nahezu) vollständig bezahlt
     const isIncome = String(o.creditDebit ?? "D").toUpperCase() === "C";
     const date = firstDate(o, ["voucherDate", "createDate"]) ?? startOfDayUTC(new Date());
-    const due = firstDate(o, ["payDate", "deliveryDate"]) ?? date;
+    // Fälligkeit = paymentDeadline (Zahlungsziel des Belegs). `payDate` ist das
+    // tatsächliche Zahldatum – für offene Belege irreführend.
+    const due = firstDate(o, ["paymentDeadline"]) ?? date;
     out.push({
       externalId: String(o.id),
       source: "sevdesk-voucher",

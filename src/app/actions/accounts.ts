@@ -54,3 +54,17 @@ export async function archiveAccount(formData: FormData) {
   revalidatePath("/accounts");
   revalidatePath("/");
 }
+
+export async function toggleAccountExcluded(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const acc = await prisma.account.findUnique({ where: { id } });
+  if (!acc) return;
+  await prisma.account.update({
+    where: { id },
+    data: { excludedFromCalc: !acc.excludedFromCalc },
+  });
+  revalidatePath("/accounts");
+  revalidatePath("/");
+  revalidatePath("/breakdown");
+}

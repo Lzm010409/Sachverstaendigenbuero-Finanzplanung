@@ -1,6 +1,6 @@
 import { getAccountsWithBalance } from "@/lib/queries";
 import { formatCents } from "@/lib/money";
-import { archiveAccount, updateAccountOpening } from "@/app/actions/accounts";
+import { archiveAccount, toggleAccountExcluded, updateAccountOpening } from "@/app/actions/accounts";
 import { AccountForm } from "./account-form";
 
 export const dynamic = "force-dynamic";
@@ -21,7 +21,9 @@ function toDateInput(d: Date): string {
 
 export default async function AccountsPage() {
   const accounts = await getAccountsWithBalance();
-  const total = accounts.reduce((s, a) => s + a.currentBalance, 0);
+  const total = accounts
+    .filter((a) => !a.excludedFromCalc)
+    .reduce((s, a) => s + a.currentBalance, 0);
 
   return (
     <div className="space-y-6">
@@ -55,12 +57,16 @@ export default async function AccountsPage() {
                   <th className="th">Umsätze</th>
                   <th className="th">Anfangssaldo &amp; Stichtag</th>
                   <th className="th text-right">Aktueller Saldo</th>
+                  <th className="th text-center">In Berechnung</th>
                   <th className="th"></th>
                 </tr>
               </thead>
               <tbody>
                 {accounts.map((a) => (
-                  <tr key={a.id} className="border-b border-slate-50">
+                  <tr
+                    key={a.id}
+                    className={`border-b border-slate-50 ${a.excludedFromCalc ? "opacity-50" : ""}`}
+                  >
                     <td className="td font-medium">
                       {a.name}
                       <div className="text-xs text-slate-400">
@@ -95,6 +101,23 @@ export default async function AccountsPage() {
                       className={`td text-right font-semibold ${a.currentBalance < 0 ? "text-red-600" : ""}`}
                     >
                       {formatCents(a.currentBalance)}
+                      {a.excludedFromCalc && (
+                        <div className="text-xs font-normal text-amber-600">ausgeschlossen</div>
+                      )}
+                    </td>
+                    <td className="td text-center">
+                      <form action={toggleAccountExcluded}>
+                        <input type="hidden" name="id" value={a.id} />
+                        <button
+                          type="submit"
+                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${a.excludedFromCalc ? "bg-slate-300" : "bg-brand"}`}
+                          title={a.excludedFromCalc ? "Wird NICHT einbezogen – klicken zum Einbeziehen" : "Wird einbezogen – klicken zum Ausschließen"}
+                        >
+                          <span
+                            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition ${a.excludedFromCalc ? "translate-x-1" : "translate-x-5"}`}
+                          />
+                        </button>
+                      </form>
                     </td>
                     <td className="td text-right">
                       <form action={archiveAccount}>

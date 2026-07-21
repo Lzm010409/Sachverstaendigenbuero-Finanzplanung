@@ -56,6 +56,9 @@ model Account {
   // Externe ID zur Zuordnung bei Integrationen (z.B. sevDesk CheckAccount-ID).
   externalId     String?
   source         String? // Herkunft, z.B. "sevdesk"
+  // Wenn true: Konto bleibt sichtbar/synchronisiert, zählt aber NICHT in
+  // Saldo, Forecast, Auswertung und Kennzahlen (z.B. Dummy-/Nebenkonten).
+  excludedFromCalc Boolean     @default(false)
   currency       String        @default("EUR")
   // Anfangssaldo in Cent zum Startdatum (alles davor ist im Saldo bereits enthalten)
   openingBalance Int           @default(0)

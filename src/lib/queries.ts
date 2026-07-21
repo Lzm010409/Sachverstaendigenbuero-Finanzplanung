@@ -15,8 +15,12 @@ import { addMonths, startOfDayUTC, todayUTC } from "./dates";
  */
 export async function getTotalBalanceCents(): Promise<number> {
   const accounts = await getAccountsWithBalance();
-  return accounts.reduce((s, a) => s + a.currentBalance, 0);
+  return accounts.filter((a) => !a.excludedFromCalc).reduce((s, a) => s + a.currentBalance, 0);
 }
+
+// Where-Fragment für Transaktionen, die in Berechnungen einfließen sollen
+// (nur nicht-archivierte, nicht-ausgeschlossene Konten).
+export const INCLUDED_ACCOUNT = { archived: false, excludedFromCalc: false } as const;
 
 export interface AccountWithBalance {
   id: string;
@@ -27,6 +31,7 @@ export interface AccountWithBalance {
   openingDate: Date;
   currentBalance: number;
   txCount: number;
+  excludedFromCalc: boolean;
 }
 
 export async function getAccountsWithBalance(): Promise<AccountWithBalance[]> {
@@ -54,6 +59,7 @@ export async function getAccountsWithBalance(): Promise<AccountWithBalance[]> {
       openingDate: a.openingDate,
       currentBalance: since + movement,
       txCount: a._count.transactions,
+      excludedFromCalc: a.excludedFromCalc,
     };
   });
 }
@@ -140,7 +146,7 @@ export async function getPlanVsActual(monthOffset = 0): Promise<{
     prisma.category.findMany(),
     prisma.plannedItem.findMany({ where: { active: true } }),
     prisma.transaction.findMany({
-      where: { bookingDate: { gte: monthStart, lt: monthEnd } },
+      where: { bookingDate: { gte: monthStart, lt: monthEnd }, account: INCLUDED_ACCOUNT },
     }),
   ]);
 

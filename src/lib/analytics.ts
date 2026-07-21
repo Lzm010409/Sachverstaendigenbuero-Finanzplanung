@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { addDays, addMonths, startOfDayUTC, todayUTC } from "./dates";
-import { getTotalBalanceCents } from "./queries";
+import { getTotalBalanceCents, INCLUDED_ACCOUNT } from "./queries";
 
 export type Granularity = "week" | "month" | "year";
 
@@ -92,11 +92,11 @@ export async function getCategoryBreakdown(
   const [categories, txs, yearTxs] = await Promise.all([
     prisma.category.findMany({ orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     prisma.transaction.findMany({
-      where: { bookingDate: { gte: rangeStart, lt: rangeEnd } },
+      where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
       select: { categoryId: true, amount: true, bookingDate: true },
     }),
     prisma.transaction.findMany({
-      where: { bookingDate: { gte: yearStart, lt: yearEnd } },
+      where: { bookingDate: { gte: yearStart, lt: yearEnd }, account: INCLUDED_ACCOUNT },
       select: { categoryId: true, amount: true },
     }),
   ]);
@@ -180,7 +180,7 @@ export async function getKpis(): Promise<Kpis> {
   const [balance, txs, openItems] = await Promise.all([
     getTotalBalanceCents(),
     prisma.transaction.findMany({
-      where: { bookingDate: { gte: from, lt: today } },
+      where: { bookingDate: { gte: from, lt: today }, account: INCLUDED_ACCOUNT },
       select: { amount: true },
     }),
     prisma.openItem.findMany({ where: { paid: false }, select: { kind: true, amount: true } }),

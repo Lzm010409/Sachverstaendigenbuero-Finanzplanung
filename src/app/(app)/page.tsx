@@ -1,24 +1,25 @@
 import Link from "next/link";
-import { getAccountsWithBalance, getForecast, getTotalBalanceCents } from "@/lib/queries";
-import { getKpis } from "@/lib/analytics";
+import { getCashflowMatrix, getKpis, type CashflowCatRow, type CashflowMonth } from "@/lib/analytics";
 import { formatCents } from "@/lib/money";
-import { prisma } from "@/lib/db";
-import { ForecastChart } from "@/components/forecast-chart";
-import { HorizonSelect } from "@/components/horizon-select";
-import { ScenarioSelect } from "@/components/scenario-select";
+import { CashflowChart } from "@/components/cashflow-chart";
 
 export const dynamic = "force-dynamic";
+
+function eur(cents: number): string {
+  if (cents === 0) return "–";
+  return (cents / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 }) + " €";
+}
 
 function Stat({
   label,
   value,
-  hint,
   tone = "default",
+  hint,
 }: {
   label: string;
   value: string;
-  hint?: string;
   tone?: "default" | "positive" | "negative" | "warning";
+  hint?: string;
 }) {
   const toneClass =
     tone === "negative"
@@ -31,212 +32,169 @@ function Stat({
   return (
     <div className="card">
       <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-1 text-2xl font-bold ${toneClass}`}>{value}</div>
-      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+      <div className={`mt-1 text-xl font-bold ${toneClass}`}>{value}</div>
+      {hint && <div className="mt-0.5 text-xs text-slate-400">{hint}</div>}
     </div>
   );
 }
 
-export default async function DashboardPage({
-  searchParams,
+function Cell({ value, month, tone }: { value: number; month: CashflowMonth; tone?: "in" | "out" }) {
+  const color = tone === "in" ? "text-emerald-700" : tone === "out" ? "text-red-600" : "text-slate-700";
+  return (
+    <td
+      className={`whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${color} ${month.isCurrent ? "bg-brand/5" : ""}`}
+    >
+      {value === 0 ? <span className="text-slate-300">–</span> : eur(value)}
+    </td>
+  );
+}
+
+function CatRow({ row, months }: { row: CashflowCatRow; months: CashflowMonth[] }) {
+  const isIncome = row.kind === "INCOME";
+  return (
+    <tr className="border-b border-slate-50">
+      <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-sm text-slate-700">
+        <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: row.color }} />
+        {row.name}
+      </td>
+      {row.values.map((v, i) => (
+        <Cell key={months[i].key} value={v} month={months[i]} tone={isIncome ? "in" : "out"} />
+      ))}
+    </tr>
+  );
+}
+
+function SummaryRow({
+  label,
+  values,
+  months,
+  strong,
+  tone,
 }: {
-  searchParams: Promise<{ h?: string; s?: string }>;
+  label: string;
+  values: number[];
+  months: CashflowMonth[];
+  strong?: boolean;
+  tone?: "in" | "out";
 }) {
-  const params = await searchParams;
-  const horizon = Math.min(Math.max(Number(params.h) || 90, 7), 365);
-  const scenarioId = params.s || "";
+  return (
+    <tr className={strong ? "bg-slate-50" : ""}>
+      <td className={`sticky left-0 z-10 px-3 py-1.5 text-sm ${strong ? "bg-slate-50 font-semibold text-slate-800" : "bg-white text-slate-600"}`}>
+        {label}
+      </td>
+      {values.map((v, i) => (
+        <td
+          key={months[i].key}
+          className={`whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${strong ? "font-semibold" : ""} ${v < 0 ? "text-red-600" : tone === "in" ? "text-emerald-700" : "text-slate-800"} ${months[i].isCurrent ? "bg-brand/10" : strong ? "bg-slate-50" : ""}`}
+        >
+          {eur(v)}
+        </td>
+      ))}
+    </tr>
+  );
+}
 
-  const [total, forecast, accounts, plannedCount, upcoming, scenarios, activeScenario, kpis] =
-    await Promise.all([
-      getTotalBalanceCents(),
-      getForecast(horizon, scenarioId || undefined),
-      getAccountsWithBalance(),
-      prisma.plannedItem.count({ where: { active: true } }),
-      prisma.plannedItem.findMany({
-        where: { active: true },
-        orderBy: { startDate: "asc" },
-        take: 6,
-        include: { category: true },
-      }),
-      prisma.scenario.findMany({ orderBy: { createdAt: "asc" } }),
-      scenarioId ? prisma.scenario.findUnique({ where: { id: scenarioId } }) : Promise.resolve(null),
-      getKpis(),
-    ]);
+export default async function DashboardPage() {
+  const [kpis, matrix] = await Promise.all([getKpis(), getCashflowMatrix(6, 6)]);
+  const { months } = matrix;
 
-  const exportQuery = new URLSearchParams({ h: String(horizon) });
-  if (scenarioId) exportQuery.set("s", scenarioId);
-
-  const lowestDate = new Date(forecast.lowest.date).toLocaleDateString("de-DE");
-  const lowNegative = forecast.lowest.balance < 0;
+  const lowestFuture = months
+    .filter((m) => m.isFuture || m.isCurrent)
+    .reduce<CashflowMonth | null>((min, m) => (!min || m.endLiquidity < min.endLiquidity ? m : min), null);
+  const warnNegative = lowestFuture && lowestFuture.endLiquidity < 0;
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Übersicht</h1>
-          <p className="text-sm text-slate-500">
-            Liquiditätsvorschau der nächsten {horizon} Tage
-            {activeScenario && (
-              <span className="ml-2 badge bg-amber-100 text-amber-700">
-                Szenario: {activeScenario.name}
-              </span>
-            )}
-          </p>
+          <p className="text-sm text-slate-500">Liquidität, Ein- und Auszahlungen je Monat</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ScenarioSelect
-            scenarios={scenarios.map((s) => ({ id: s.id, name: s.name }))}
-            current={scenarioId}
-          />
-          <HorizonSelect current={horizon} />
-          <a className="btn-secondary" href={`/api/export/forecast?${exportQuery.toString()}`}>
-            ⬇ CSV
-          </a>
-        </div>
-      </div>
-
-      {accounts.length === 0 && (
-        <div className="card border-brand/30 bg-brand/5">
-          <p className="text-sm text-slate-700">
-            Noch keine Konten angelegt. Leg zuerst ein{" "}
-            <Link href="/accounts" className="font-semibold text-brand underline">
-              Konto
-            </Link>{" "}
-            an und importiere Umsätze unter{" "}
-            <Link href="/import" className="font-semibold text-brand underline">
-              Import
-            </Link>
-            .
-          </p>
-        </div>
-      )}
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
-          label="Aktueller Saldo"
-          value={formatCents(total)}
-          tone={total < 0 ? "negative" : "default"}
-          hint={`${accounts.length} Konto/Konten`}
-        />
-        <Stat
-          label="Tiefster Stand"
-          value={formatCents(forecast.lowest.balance)}
-          tone={lowNegative ? "negative" : "warning"}
-          hint={`am ${lowestDate}`}
-        />
-        <Stat
-          label="Geplante Zuflüsse"
-          value={formatCents(forecast.totalInflow)}
-          tone="positive"
-          hint={`über ${horizon} Tage`}
-        />
-        <Stat
-          label="Geplante Abflüsse"
-          value={formatCents(forecast.totalOutflow)}
-          tone="default"
-          hint={`${plannedCount} aktive Planposten`}
-        />
+        <Link href="/scenarios" className="text-sm font-medium text-brand hover:underline">
+          Szenarien →
+        </Link>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Stat label="Verfügbare Liquidität" value={formatCents(kpis.currentBalance)} tone={kpis.currentBalance < 0 ? "negative" : "default"} />
         <Stat label="Ø Einnahmen / Monat" value={formatCents(kpis.avgMonthlyIncome)} tone="positive" hint="letzte 3 Monate" />
         <Stat label="Ø Ausgaben / Monat" value={formatCents(-kpis.avgMonthlyExpense)} hint="letzte 3 Monate" />
-        <Stat
-          label="Netto / Monat"
-          value={formatCents(kpis.netMonthly)}
-          tone={kpis.netMonthly < 0 ? "negative" : "positive"}
-          hint={kpis.netMonthly < 0 ? "Liquidität wird verbraucht" : "Überschuss"}
-        />
         <Stat
           label="Reichweite"
           value={kpis.runwayMonths == null ? "∞" : `${kpis.runwayMonths} Mon.`}
           tone={kpis.runwayMonths != null && kpis.runwayMonths < 6 ? "warning" : "default"}
-          hint={kpis.runwayMonths == null ? "kein Netto-Verbrauch" : "bei aktuellem Burn"}
         />
-        <Stat
-          label="Working Capital"
-          value={formatCents(kpis.workingCapital)}
-          tone={kpis.workingCapital < 0 ? "negative" : "default"}
-          hint="Saldo + Ford. − Verb."
-        />
+        <Stat label="Working Capital" value={formatCents(kpis.workingCapital)} tone={kpis.workingCapital < 0 ? "negative" : "default"} hint="Saldo + Ford. − Verb." />
       </div>
 
-      {lowNegative && (
+      {warnNegative && lowestFuture && (
         <div className="card flex items-start gap-3 border-red-200 bg-red-50">
           <span className="text-xl">⚠️</span>
           <div className="text-sm text-red-800">
-            <strong>Liquiditätswarnung:</strong> Der prognostizierte Saldo unterschreitet am{" "}
-            {lowestDate} mit {formatCents(forecast.lowest.balance)} die Nulllinie. Prüfe geplante
-            Ausgaben oder plane Zuflüsse ein.
+            <strong>Liquiditätswarnung:</strong> Im {lowestFuture.label} sinkt die prognostizierte
+            Liquidität auf {formatCents(lowestFuture.endLiquidity)}.
           </div>
         </div>
       )}
 
       <div className="card">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Liquiditätskurve</h2>
-        <ForecastChart points={forecast.points.map((p) => ({ date: p.date, balance: p.balance }))} />
+        <CashflowChart points={months.map((m) => ({ label: m.label, inflow: m.inflow, outflow: m.outflow, endLiquidity: m.endLiquidity, isFuture: m.isFuture, isCurrent: m.isCurrent }))} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="card">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-700">Konten</h2>
-            <Link href="/accounts" className="text-xs font-medium text-brand hover:underline">
-              Verwalten →
-            </Link>
-          </div>
-          {accounts.length === 0 ? (
-            <p className="text-sm text-slate-400">Keine Konten.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {accounts.map((a) => (
-                <li key={a.id} className="flex items-center justify-between py-2">
-                  <div>
-                    <div className="text-sm font-medium text-slate-800">{a.name}</div>
-                    <div className="text-xs text-slate-400">{a.txCount} Umsätze</div>
-                  </div>
-                  <div
-                    className={`text-sm font-semibold ${a.currentBalance < 0 ? "text-red-600" : "text-slate-800"}`}
-                  >
-                    {formatCents(a.currentBalance)}
-                  </div>
-                </li>
+      <div className="card overflow-x-auto p-0">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-slate-200">
+              <th className="sticky left-0 z-10 bg-white px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Kategorie
+              </th>
+              {months.map((m) => (
+                <th
+                  key={m.key}
+                  className={`whitespace-nowrap px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide ${m.isCurrent ? "bg-brand/10 text-brand-fg" : "text-slate-500"}`}
+                >
+                  {m.label}
+                </th>
               ))}
-            </ul>
-          )}
-        </div>
+            </tr>
+          </thead>
+          <tbody>
+            <SummaryRow label="Liquidität Start" values={months.map((m) => m.startLiquidity)} months={months} />
+            <SummaryRow label="Einzahlungen" values={months.map((m) => m.inflow)} months={months} tone="in" />
+            <SummaryRow label="Auszahlungen" values={months.map((m) => -m.outflow)} months={months} />
+            <SummaryRow label="Nettoveränderung" values={months.map((m) => m.net)} months={months} />
+            <SummaryRow label="Liquidität Ende" values={months.map((m) => m.endLiquidity)} months={months} strong />
 
-        <div className="card">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-700">Nächste Planposten</h2>
-            <Link href="/planning" className="text-xs font-medium text-brand hover:underline">
-              Verwalten →
-            </Link>
-          </div>
-          {upcoming.length === 0 ? (
-            <p className="text-sm text-slate-400">Keine Planposten.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {upcoming.map((p) => (
-                <li key={p.id} className="flex items-center justify-between py-2">
-                  <div>
-                    <div className="text-sm font-medium text-slate-800">{p.name}</div>
-                    <div className="text-xs text-slate-400">
-                      {p.recurrence === "ONCE" ? "einmalig" : p.recurrence.toLowerCase()} · ab{" "}
-                      {new Date(p.startDate).toLocaleDateString("de-DE")}
-                    </div>
-                  </div>
-                  <div
-                    className={`text-sm font-semibold ${p.amount < 0 ? "text-red-600" : "text-emerald-600"}`}
-                  >
-                    {formatCents(p.amount)}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+            <tr className="bg-emerald-50/60">
+              <td className="sticky left-0 z-10 bg-emerald-50 px-3 py-1.5 text-xs font-semibold uppercase text-emerald-700" colSpan={months.length + 1}>
+                Einnahmen
+              </td>
+            </tr>
+            {matrix.incomeRows.length === 0 ? (
+              <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 1}>—</td></tr>
+            ) : (
+              matrix.incomeRows.map((r) => <CatRow key={r.categoryId ?? r.name} row={r} months={months} />)
+            )}
+
+            <tr className="bg-red-50/60">
+              <td className="sticky left-0 z-10 bg-red-50 px-3 py-1.5 text-xs font-semibold uppercase text-red-700" colSpan={months.length + 1}>
+                Ausgaben
+              </td>
+            </tr>
+            {matrix.expenseRows.length === 0 ? (
+              <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 1}>—</td></tr>
+            ) : (
+              matrix.expenseRows.map((r) => <CatRow key={r.categoryId ?? r.name} row={r} months={months} />)
+            )}
+          </tbody>
+        </table>
       </div>
+
+      <p className="text-xs text-slate-400">
+        Vergangene Monate zeigen gebuchte Umsätze, künftige Monate die Planposten und offenen
+        Posten. Die Liquiditäts-Endwerte sind auf den aktuellen Kontostand verankert. Budgets &amp;
+        Farbverläufe je Kategorie findest du unter <Link href="/breakdown" className="text-brand underline">Auswertung</Link>.
+      </p>
     </div>
   );
 }

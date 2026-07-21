@@ -161,6 +161,174 @@ export async function getCategoryBreakdown(
   };
 }
 
+export interface CashflowMonth {
+  key: string;
+  label: string;
+  isFuture: boolean;
+  isCurrent: boolean;
+  inflow: number;
+  outflow: number; // positiv dargestellt
+  net: number;
+  startLiquidity: number;
+  endLiquidity: number;
+}
+
+export interface CashflowCatRow {
+  categoryId: string | null;
+  name: string;
+  kind: "INCOME" | "EXPENSE" | "MIXED";
+  color: string;
+  values: number[]; // signierte Summe je Monat (Cent)
+}
+
+export interface CashflowMatrix {
+  months: CashflowMonth[];
+  incomeRows: CashflowCatRow[];
+  expenseRows: CashflowCatRow[];
+}
+
+const MONTHS_LONG = [
+  "Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez",
+];
+
+/**
+ * Monats-Cashflow-Matrix im finban-Stil: Vergangenheit aus gebuchten Umsätzen,
+ * Zukunft aus Planposten + offenen Posten. Enthält je Monat die
+ * Liquiditäts-Start/-Ende-Werte (auf den heutigen Kontostand verankert).
+ */
+export async function getCashflowMatrix(
+  monthsBack = 6,
+  monthsForward = 6,
+): Promise<CashflowMatrix> {
+  const { occurrencesBetween } = await import("./recurrence");
+  const today = todayUTC();
+  const curMonthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const rangeStart = addMonths(curMonthStart, -monthsBack);
+  const rangeEnd = addMonths(curMonthStart, monthsForward + 1); // exklusiv
+
+  const months: { key: string; start: Date; end: Date; label: string; isFuture: boolean; isCurrent: boolean }[] = [];
+  for (let i = -monthsBack; i <= monthsForward; i++) {
+    const start = addMonths(curMonthStart, i);
+    const end = addMonths(start, 1);
+    months.push({
+      key: `${start.getUTCFullYear()}-${start.getUTCMonth() + 1}`,
+      start,
+      end,
+      label: `${MONTHS_LONG[start.getUTCMonth()]} ${String(start.getUTCFullYear()).slice(2)}`,
+      isFuture: start.getTime() > today.getTime() && i > 0,
+      isCurrent: i === 0,
+    });
+  }
+  const ci = monthsBack; // Index des aktuellen Monats
+
+  const [categories, txs, planned, openItems, balance] = await Promise.all([
+    prisma.category.findMany(),
+    prisma.transaction.findMany({
+      where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
+      select: { categoryId: true, amount: true, bookingDate: true },
+    }),
+    prisma.plannedItem.findMany({ where: { active: true } }),
+    prisma.openItem.findMany({ where: { paid: false } }),
+    getTotalBalanceCents(),
+  ]);
+
+  const monthIndex = (d: Date): number =>
+    months.findIndex((m) => d.getTime() >= m.start.getTime() && d.getTime() < m.end.getTime());
+
+  // Zukünftige Events (Planposten ab morgen + offene Posten ab heute).
+  const tomorrow = addDays(today, 1);
+  interface Ev {
+    date: Date;
+    amount: number;
+    categoryId: string | null;
+  }
+  const futureEvents: Ev[] = [];
+  for (const p of planned) {
+    for (const date of occurrencesBetween(p, tomorrow, addDays(rangeEnd, -1))) {
+      futureEvents.push({ date, amount: p.amount, categoryId: p.categoryId });
+    }
+  }
+  for (const oi of openItems) {
+    const date = oi.dueDate.getTime() < today.getTime() ? today : startOfDayUTC(oi.dueDate);
+    if (date.getTime() >= rangeEnd.getTime()) continue;
+    futureEvents.push({
+      date,
+      amount: oi.kind === "RECEIVABLE" ? oi.amount : -oi.amount,
+      categoryId: oi.categoryId,
+    });
+  }
+
+  // Aggregation je Kategorie × Monat + Zu-/Abflüsse je Monat.
+  const catKey = (id: string | null) => id ?? "__none__";
+  const perCat = new Map<string, number[]>();
+  const inflow = new Array(months.length).fill(0);
+  const outflow = new Array(months.length).fill(0);
+  const addValue = (mi: number, cid: string | null, amount: number) => {
+    if (mi < 0) return;
+    const k = catKey(cid);
+    if (!perCat.has(k)) perCat.set(k, new Array(months.length).fill(0));
+    perCat.get(k)![mi] += amount;
+    if (amount >= 0) inflow[mi] += amount;
+    else outflow[mi] += -amount;
+  };
+  for (const t of txs) addValue(monthIndex(t.bookingDate), t.categoryId, t.amount);
+  for (const e of futureEvents) addValue(monthIndex(e.date), e.categoryId, e.amount);
+
+  // Liquiditäts-Walk, verankert am aktuellen Kontostand.
+  const net = months.map((_, i) => inflow[i] - outflow[i]);
+  const txThisMonth = txs
+    .filter((t) => monthIndex(t.bookingDate) === ci)
+    .reduce((s, t) => s + t.amount, 0);
+  const startLiq = new Array(months.length).fill(0);
+  const endLiq = new Array(months.length).fill(0);
+  startLiq[ci] = balance - txThisMonth;
+  endLiq[ci] = startLiq[ci] + net[ci];
+  for (let i = ci - 1; i >= 0; i--) {
+    endLiq[i] = startLiq[i + 1];
+    startLiq[i] = endLiq[i] - net[i];
+  }
+  for (let i = ci + 1; i < months.length; i++) {
+    startLiq[i] = endLiq[i - 1];
+    endLiq[i] = startLiq[i] + net[i];
+  }
+
+  const catInfo = new Map(categories.map((c) => [c.id, c]));
+  const buildRows = (kind: "INCOME" | "EXPENSE"): CashflowCatRow[] => {
+    const rows: CashflowCatRow[] = [];
+    for (const [k, values] of perCat) {
+      const cat = k === "__none__" ? null : catInfo.get(k);
+      const rowKind = cat?.kind ?? "MIXED";
+      const isIncome = rowKind === "INCOME";
+      if (kind === "INCOME" ? !isIncome : isIncome) continue;
+      if (values.every((v) => v === 0)) continue;
+      rows.push({
+        categoryId: cat?.id ?? null,
+        name: cat?.name ?? "Unkategorisiert",
+        kind: rowKind,
+        color: cat?.color ?? "#94a3b8",
+        values,
+      });
+    }
+    return rows.sort((a, b) => a.name.localeCompare(b.name));
+  };
+
+  return {
+    months: months.map((m, i) => ({
+      key: m.key,
+      label: m.label,
+      isFuture: m.isFuture,
+      isCurrent: m.isCurrent,
+      inflow: inflow[i],
+      outflow: outflow[i],
+      net: net[i],
+      startLiquidity: startLiq[i],
+      endLiquidity: endLiq[i],
+    })),
+    incomeRows: buildRows("INCOME"),
+    expenseRows: buildRows("EXPENSE"),
+  };
+}
+
 export interface Kpis {
   currentBalance: number;
   avgMonthlyIncome: number;

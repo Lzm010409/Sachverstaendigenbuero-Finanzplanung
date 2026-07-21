@@ -1,9 +1,13 @@
 import { redirect } from "next/navigation";
-import { isAuthenticated } from "@/lib/session";
+import { auth } from "@/auth";
+import { microsoftEnabled } from "@/auth.config";
 import { LoginForm } from "./login-form";
 
+export const dynamic = "force-dynamic";
+
 export default async function LoginPage() {
-  if (await isAuthenticated()) redirect("/");
+  const session = await auth();
+  if (session?.user) redirect("/");
   return (
     <main className="flex min-h-screen items-center justify-center p-6">
       <div className="w-full max-w-sm">
@@ -12,7 +16,7 @@ export default async function LoginPage() {
           <p className="mt-1 text-sm text-slate-500">Bitte anmelden</p>
         </div>
         <div className="card">
-          <LoginForm />
+          <LoginForm microsoftEnabled={microsoftEnabled} />
         </div>
       </div>
     </main>

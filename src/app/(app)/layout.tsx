@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { requireAuth } from "@/lib/session";
+import { redirect } from "next/navigation";
+import { auth } from "@/auth";
 import { logout } from "@/app/actions/auth";
 import { NavLink } from "@/components/nav-link";
 
@@ -16,7 +17,8 @@ const NAV = [
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  await requireAuth();
+  const session = await auth();
+  if (!session?.user) redirect("/login");
   return (
     <div className="flex min-h-screen">
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-4 md:flex">

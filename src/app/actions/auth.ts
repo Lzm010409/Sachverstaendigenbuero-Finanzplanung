@@ -1,38 +1,31 @@
 "use server";
 
-import { cookies, headers } from "next/headers";
-import { redirect } from "next/navigation";
-import {
-  SESSION_COOKIE,
-  SESSION_MAX_AGE,
-  checkPassword,
-  createSessionToken,
-} from "@/lib/auth";
+import { AuthError } from "next-auth";
+import { signIn, signOut } from "@/auth";
 
-export async function login(_prev: unknown, formData: FormData): Promise<{ error?: string }> {
-  const password = String(formData.get("password") ?? "");
-  if (!checkPassword(password)) {
-    return { error: "Falsches Passwort." };
+export async function passwordLogin(
+  _prev: { error?: string },
+  formData: FormData,
+): Promise<{ error?: string }> {
+  try {
+    await signIn("password", {
+      password: String(formData.get("password") ?? ""),
+      redirectTo: "/",
+    });
+    return {};
+  } catch (error) {
+    // Erfolgs-Redirect (NEXT_REDIRECT) muss durchgereicht werden.
+    if (error instanceof AuthError) {
+      return { error: "Falsches Passwort." };
+    }
+    throw error;
   }
-  // Secure-Flag nur setzen, wenn tatsächlich über HTTPS ausgeliefert wird
-  // (hinter einem Reverse-Proxy erkennbar an x-forwarded-proto). So funktioniert
-  // der Login auch bei einer reinen HTTP-Bereitstellung, ohne Endlosschleife.
-  const hdrs = await headers();
-  const isHttps = (hdrs.get("x-forwarded-proto") ?? "").split(",")[0].trim() === "https";
+}
 
-  const store = await cookies();
-  store.set(SESSION_COOKIE, createSessionToken(Date.now()), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: isHttps,
-    path: "/",
-    maxAge: SESSION_MAX_AGE,
-  });
-  redirect("/");
+export async function microsoftLogin(): Promise<void> {
+  await signIn("microsoft-entra-id", { redirectTo: "/" });
 }
 
 export async function logout(): Promise<void> {
-  const store = await cookies();
-  store.delete(SESSION_COOKIE);
-  redirect("/login");
+  await signOut({ redirectTo: "/login" });
 }

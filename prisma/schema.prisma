@@ -1,0 +1,125 @@
+// Liquiditätsplanung – Datenmodell
+// Geldbeträge werden IMMER als Ganzzahl in Cent gespeichert (Int), niemals als Float.
+// Vorzeichen: positiv = Zufluss (Einnahme), negativ = Abfluss (Ausgabe).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CHECKING // Girokonto
+  SAVINGS // Sparkonto / Tagesgeld
+  CASH // Kasse
+  CREDIT // Kreditlinie / Kreditkarte
+}
+
+enum CategoryKind {
+  INCOME
+  EXPENSE
+}
+
+enum Recurrence {
+  ONCE
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
+enum RuleField {
+  COUNTERPARTY // Empfänger/Auftraggeber
+  PURPOSE // Verwendungszweck
+}
+
+model Account {
+  id             String        @id @default(cuid())
+  name           String
+  type           AccountType   @default(CHECKING)
+  iban           String?
+  currency       String        @default("EUR")
+  // Anfangssaldo in Cent zum Startdatum (alles davor ist im Saldo bereits enthalten)
+  openingBalance Int           @default(0)
+  openingDate    DateTime      @default(now())
+  archived       Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  transactions   Transaction[]
+  plannedItems   PlannedItem[]
+
+  @@index([archived])
+}
+
+model Category {
+  id           String        @id @default(cuid())
+  name         String
+  kind         CategoryKind
+  color        String        @default("#64748b")
+  parentId     String?
+  parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children     Category[]    @relation("CategoryTree")
+  rules        Rule[]
+  transactions Transaction[]
+  plannedItems PlannedItem[]
+  createdAt    DateTime      @default(now())
+
+  @@index([kind])
+}
+
+// Regel zur automatischen Kategorisierung importierter Umsätze.
+model Rule {
+  id         String    @id @default(cuid())
+  categoryId String
+  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  field      RuleField @default(PURPOSE)
+  // Freitext, der (case-insensitive) im Feld enthalten sein muss. Optional als /regex/.
+  pattern    String
+  priority   Int       @default(100) // kleiner = wird zuerst geprüft
+  active     Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+
+  @@index([active, priority])
+}
+
+model Transaction {
+  id           String    @id @default(cuid())
+  accountId    String
+  account      Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bookingDate  DateTime
+  valueDate    DateTime?
+  amount       Int // Cent, vorzeichenbehaftet
+  counterparty String    @default("")
+  purpose      String    @default("")
+  categoryId   String?
+  category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  // Deduplizierung beim Import: Hash aus Konto+Datum+Betrag+Zweck+Gegenpartei
+  importHash   String    @unique
+  raw          String? // Original-Zeile/-Feld zur Nachvollziehbarkeit
+  createdAt    DateTime  @default(now())
+
+  @@index([accountId, bookingDate])
+  @@index([categoryId])
+}
+
+// Geplante (wiederkehrende oder einmalige) Ein-/Auszahlung für die Vorschau.
+model PlannedItem {
+  id          String      @id @default(cuid())
+  name        String
+  accountId   String?
+  account     Account?    @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  categoryId  String?
+  category    Category?   @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  amount      Int // Cent, vorzeichenbehaftet
+  recurrence  Recurrence  @default(MONTHLY)
+  interval    Int         @default(1) // z.B. alle 2 Monate => MONTHLY, interval 2
+  startDate   DateTime
+  endDate     DateTime? // optional, offen wenn null
+  active      Boolean     @default(true)
+  note        String?
+  createdAt   DateTime    @default(now())
+
+  @@index([active])
+}

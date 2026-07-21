@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: liqui
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-liqui}
+      POSTGRES_DB: liqui
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liqui"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://liqui:${DB_PASSWORD:-liqui}@db:5432/liqui?schema=public
+      APP_PASSWORD: ${APP_PASSWORD:?bitte APP_PASSWORD in .env setzen}
+      AUTH_SECRET: ${AUTH_SECRET:?bitte AUTH_SECRET in .env setzen}
+      NODE_ENV: production
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db-data:

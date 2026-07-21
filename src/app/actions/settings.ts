@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getSevdeskToken, setSetting } from "@/lib/settings";
-import { fetchCheckAccounts, fetchTransactions } from "@/lib/sevdesk";
+import { fetchAccountBalanceCents, fetchCheckAccounts, fetchTransactions } from "@/lib/sevdesk";
 import { importHash } from "@/lib/import/hash";
 import { categorize } from "@/lib/categorize";
 
@@ -28,6 +28,7 @@ export interface SevdeskSyncResult {
   accounts?: number;
   imported?: number;
   categorized?: number;
+  reconciled?: number; // Konten, deren Saldo an sevDesk angeglichen wurde
   lastSync?: string;
 }
 
@@ -45,6 +46,8 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
   const rules = await prisma.rule.findMany({ where: { active: true } });
   let imported = 0;
   let categorized = 0;
+  let reconciled = 0;
+  const nowUnix = Math.floor(Date.now() / 1000);
 
   for (const sev of sevAccounts) {
     let txs;
@@ -96,6 +99,22 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
 
     const res = await prisma.transaction.createMany({ data, skipDuplicates: true });
     imported += res.count;
+
+    // Kontostand mit sevDesk abgleichen: Anfangssaldo so setzen, dass der
+    // angezeigte Saldo exakt dem sevDesk-Kontostand entspricht.
+    const balanceCents =
+      sev.balance != null
+        ? Math.round(sev.balance * 100)
+        : await fetchAccountBalanceCents(token, sev.id, nowUnix);
+    if (balanceCents != null) {
+      const sum = await prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: { accountId: account.id, bookingDate: { gte: account.openingDate } },
+      });
+      const openingBalance = balanceCents - (sum._sum.amount ?? 0);
+      await prisma.account.update({ where: { id: account.id }, data: { openingBalance } });
+      reconciled++;
+    }
   }
 
   const now = new Date().toISOString();
@@ -104,5 +123,5 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
   revalidatePath("/");
   revalidatePath("/transactions");
   revalidatePath("/accounts");
-  return { accounts: sevAccounts.length, imported, categorized, lastSync: now };
+  return { accounts: sevAccounts.length, imported, categorized, reconciled, lastSync: now };
 }

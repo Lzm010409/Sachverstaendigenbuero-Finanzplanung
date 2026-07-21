@@ -24,7 +24,8 @@ export function SevdeskSync() {
       {result && !result.error && (
         <p className="text-sm text-emerald-700">
           {result.accounts} Konten geprüft, {result.imported} neue Umsätze importiert (
-          {result.categorized} kategorisiert).
+          {result.categorized} kategorisiert), {result.reconciled ?? 0} Kontostände mit sevDesk
+          abgeglichen.
         </p>
       )}
     </div>

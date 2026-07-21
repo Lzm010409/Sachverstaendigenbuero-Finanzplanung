@@ -11,6 +11,13 @@ export interface SevdeskAccount {
   type: string | null;
   currency: string | null;
   iban: string | null;
+  balance: number | null; // aktueller Kontostand laut sevDesk (falls im Objekt enthalten)
+}
+
+function toNumberOrNull(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
 }
 
 export interface MappedTransaction {
@@ -46,7 +53,35 @@ export async function fetchCheckAccounts(token: string): Promise<SevdeskAccount[
     type: o.type != null ? String(o.type) : null,
     currency: o.currency != null ? String(o.currency) : null,
     iban: o.iban != null ? String(o.iban) : null,
+    balance: toNumberOrNull(o.balance),
   }));
+}
+
+/**
+ * Aktuellen Kontostand aus sevDesk holen (getBalanceAtDate, Stichtag heute).
+ * Liefert Cent oder null. Robust gegenüber Zahl/String/verschachtelter Antwort.
+ */
+export async function fetchAccountBalanceCents(
+  token: string,
+  accountId: string,
+  atUnixSeconds: number,
+): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `${BASE}/CheckAccount/${encodeURIComponent(accountId)}/getBalanceAtDate?date=${atUnixSeconds}`,
+      { headers: { Authorization: token, Accept: "application/json" }, cache: "no-store" },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { objects?: unknown };
+    const o = data.objects;
+    const num =
+      typeof o === "object" && o !== null
+        ? toNumberOrNull((o as Record<string, unknown>).balance ?? (o as Record<string, unknown>).value)
+        : toNumberOrNull(o);
+    return num == null ? null : Math.round(num * 100);
+  } catch {
+    return null;
+  }
 }
 
 /** Wandelt einen rohen sevDesk-Umsatz in unser Zwischenformat (oder null). */

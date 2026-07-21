@@ -47,9 +47,31 @@ export async function toggleOpenItemPaid(formData: FormData) {
   if (!id) return;
   const item = await prisma.openItem.findUnique({ where: { id } });
   if (!item) return;
+  const nowPaid = !item.paid;
   await prisma.openItem.update({
     where: { id },
-    data: { paid: !item.paid, paidDate: item.paid ? null : new Date() },
+    data: {
+      paid: nowPaid,
+      paidAmount: nowPaid ? item.amount : 0,
+      paidDate: nowPaid ? new Date() : null,
+    },
+  });
+  revalidatePath("/open-items");
+  revalidatePath("/");
+}
+
+/** Erfasst eine Teilzahlung (bereits bezahlter Betrag). */
+export async function setOpenItemPayment(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const item = await prisma.openItem.findUnique({ where: { id } });
+  if (!item) return;
+  const entered = parseAmountToCents(String(formData.get("paidAmount") ?? "")) ?? 0;
+  const paidAmount = Math.max(0, Math.min(item.amount, entered));
+  const paid = paidAmount >= item.amount;
+  await prisma.openItem.update({
+    where: { id },
+    data: { paidAmount, paid, paidDate: paid ? new Date() : null },
   });
   revalidatePath("/open-items");
   revalidatePath("/");

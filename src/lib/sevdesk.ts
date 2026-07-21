@@ -118,8 +118,15 @@ export interface SevdeskOpenItem {
   kind: "RECEIVABLE" | "PAYABLE";
   counterparty: string;
   reference: string | null;
-  amountCents: number; // positiv
+  amountCents: number; // Bruttobetrag, positiv
+  paidAmountCents: number; // bereits bezahlter Anteil
   dueDate: Date;
+}
+
+function paidCents(o: RawSevObject, gross: number): number {
+  const paid = toNumberOrNull(o.sumGrossPaid ?? o.paidAmount ?? o.sumPaid);
+  if (paid == null) return 0;
+  return Math.min(Math.round(Math.abs(paid) * 100), Math.round(Math.abs(gross) * 100));
 }
 
 function firstStr(o: RawSevObject, keys: string[]): string {
@@ -162,6 +169,7 @@ export async function fetchOpenInvoices(token: string): Promise<SevdeskOpenItem[
       counterparty: firstStr(o, ["contact", "contactName", "header"]) || "Rechnung",
       reference: firstStr(o, ["invoiceNumber", "header"]) || null,
       amountCents: Math.round(Math.abs(amount) * 100),
+      paidAmountCents: paidCents(o, amount),
       dueDate: due,
     });
   }
@@ -187,6 +195,7 @@ export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[
       counterparty: firstStr(o, ["supplier", "supplierName", "description", "creditDebit"]) || "Beleg",
       reference: firstStr(o, ["voucherNumber", "description"]) || null,
       amountCents: Math.round(Math.abs(amount) * 100),
+      paidAmountCents: paidCents(o, amount),
       dueDate: due,
     });
   }

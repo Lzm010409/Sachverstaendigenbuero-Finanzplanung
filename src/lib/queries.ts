@@ -67,11 +67,17 @@ export async function getAccountsWithBalance(): Promise<AccountWithBalance[]> {
 /** Offene (unbezahlte) Posten als datumsgenaue Einmal-Zahlungen für den Forecast. */
 export async function getOpenItemOneOffs(): Promise<ForecastOneOff[]> {
   const items = await prisma.openItem.findMany({ where: { paid: false } });
-  return items.map((i) => ({
-    date: i.dueDate,
-    amount: i.kind === "RECEIVABLE" ? i.amount : -i.amount,
-    categoryId: i.categoryId,
-  }));
+  const out: ForecastOneOff[] = [];
+  for (const i of items) {
+    const open = i.amount - i.paidAmount; // nur der offene Restbetrag zählt
+    if (open <= 0) continue;
+    out.push({
+      date: i.dueDate,
+      amount: i.kind === "RECEIVABLE" ? open : -open,
+      categoryId: i.categoryId,
+    });
+  }
+  return out;
 }
 
 /** Lädt die Szenario-Konfiguration (inkl. kategoriespezifischer Faktoren) oder undefined. */

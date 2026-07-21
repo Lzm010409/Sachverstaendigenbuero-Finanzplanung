@@ -188,7 +188,8 @@ model OpenItem {
   reference    String? // z.B. Rechnungsnummer
   externalId   String? // ID im Quellsystem (z.B. sevDesk)
   source       String? // Herkunft, z.B. "sevdesk-invoice" / "sevdesk-voucher"
-  amount       Int // Cent, immer positiv; Richtung ergibt sich aus kind
+  amount       Int // Cent, immer positiv (Bruttobetrag); Richtung ergibt sich aus kind
+  paidAmount   Int          @default(0) // bereits bezahlter Anteil in Cent (Teilzahlung)
   issueDate    DateTime?
   dueDate      DateTime
   paid         Boolean      @default(false)

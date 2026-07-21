@@ -351,7 +351,10 @@ export async function getKpis(): Promise<Kpis> {
       where: { bookingDate: { gte: from, lt: today }, account: INCLUDED_ACCOUNT },
       select: { amount: true },
     }),
-    prisma.openItem.findMany({ where: { paid: false }, select: { kind: true, amount: true } }),
+    prisma.openItem.findMany({
+      where: { paid: false },
+      select: { kind: true, amount: true, paidAmount: true },
+    }),
   ]);
 
   let income = 0;
@@ -364,12 +367,13 @@ export async function getKpis(): Promise<Kpis> {
   const avgMonthlyExpense = Math.round(expense / 3);
   const netMonthly = avgMonthlyIncome - avgMonthlyExpense;
 
+  const openOf = (i: { amount: number; paidAmount: number }) => Math.max(0, i.amount - i.paidAmount);
   const openReceivables = openItems
     .filter((i) => i.kind === "RECEIVABLE")
-    .reduce((s, i) => s + i.amount, 0);
+    .reduce((s, i) => s + openOf(i), 0);
   const openPayables = openItems
     .filter((i) => i.kind === "PAYABLE")
-    .reduce((s, i) => s + i.amount, 0);
+    .reduce((s, i) => s + openOf(i), 0);
 
   const runwayMonths =
     netMonthly < 0 && balance > 0 ? Math.floor(balance / -netMonthly) : null;

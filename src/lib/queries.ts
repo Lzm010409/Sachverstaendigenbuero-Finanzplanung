@@ -14,17 +14,8 @@ import { addMonths, startOfDayUTC, todayUTC } from "./dates";
  * importierten Umsätze aufaddiert.
  */
 export async function getTotalBalanceCents(): Promise<number> {
-  const [accounts, txAgg] = await Promise.all([
-    prisma.account.aggregate({
-      _sum: { openingBalance: true },
-      where: { archived: false },
-    }),
-    prisma.transaction.aggregate({
-      _sum: { amount: true },
-      where: { account: { archived: false } },
-    }),
-  ]);
-  return (accounts._sum.openingBalance ?? 0) + (txAgg._sum.amount ?? 0);
+  const accounts = await getAccountsWithBalance();
+  return accounts.reduce((s, a) => s + a.currentBalance, 0);
 }
 
 export interface AccountWithBalance {
@@ -33,6 +24,7 @@ export interface AccountWithBalance {
   type: string;
   iban: string | null;
   openingBalance: number;
+  openingDate: Date;
   currentBalance: number;
   txCount: number;
 }
@@ -43,18 +35,27 @@ export async function getAccountsWithBalance(): Promise<AccountWithBalance[]> {
     orderBy: { createdAt: "asc" },
     include: {
       _count: { select: { transactions: true } },
-      transactions: { select: { amount: true } },
+      transactions: { select: { amount: true, bookingDate: true } },
     },
   });
-  return accounts.map((a) => ({
-    id: a.id,
-    name: a.name,
-    type: a.type,
-    iban: a.iban,
-    openingBalance: a.openingBalance,
-    currentBalance: a.openingBalance + a.transactions.reduce((s, t) => s + t.amount, 0),
-    txCount: a._count.transactions,
-  }));
+  return accounts.map((a) => {
+    // Nur Transaktionen ab dem Stichtag zählen – alles davor steckt bereits
+    // im Anfangssaldo.
+    const since = a.openingBalance;
+    const movement = a.transactions
+      .filter((t) => t.bookingDate.getTime() >= a.openingDate.getTime())
+      .reduce((s, t) => s + t.amount, 0);
+    return {
+      id: a.id,
+      name: a.name,
+      type: a.type,
+      iban: a.iban,
+      openingBalance: a.openingBalance,
+      openingDate: a.openingDate,
+      currentBalance: since + movement,
+      txCount: a._count.transactions,
+    };
+  });
 }
 
 /** Offene (unbezahlte) Posten als datumsgenaue Einmal-Zahlungen für den Forecast. */

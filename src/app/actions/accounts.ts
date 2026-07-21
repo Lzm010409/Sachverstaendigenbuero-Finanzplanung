@@ -35,6 +35,18 @@ export async function createAccount(formData: FormData): Promise<FormState> {
   return { ok: true };
 }
 
+export async function updateAccountOpening(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const openingBalance = parseAmountToCents(String(formData.get("openingBalance") ?? "")) ?? 0;
+  const openingDateStr = String(formData.get("openingDate") ?? "");
+  const data: { openingBalance: number; openingDate?: Date } = { openingBalance };
+  if (openingDateStr) data.openingDate = startOfDayUTC(new Date(openingDateStr));
+  await prisma.account.update({ where: { id }, data });
+  revalidatePath("/accounts");
+  revalidatePath("/");
+}
+
 export async function archiveAccount(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;

@@ -35,6 +35,14 @@ export async function importFinban(formData: FormData): Promise<FinbanImportSumm
     catNet.set(r.category, (catNet.get(r.category) ?? 0) + r.amount);
   }
   const sources = [...new Set(records.filter((r) => !r.planned && r.source).map((r) => r.source))];
+  // Frühestes Buchungsdatum je Konto -> wird zum Stichtag (Anfangssaldo 0),
+  // damit alle importierten Umsätze in den Saldo einfließen.
+  const earliestBySource = new Map<string, Date>();
+  for (const r of records) {
+    if (r.planned || !r.source) continue;
+    const cur = earliestBySource.get(r.source);
+    if (!cur || r.date.getTime() < cur.getTime()) earliestBySource.set(r.source, r.date);
+  }
 
   if (replace) {
     // Bestehende (Demo-)Daten entfernen. Szenarien bleiben erhalten.
@@ -50,7 +58,16 @@ export async function importFinban(formData: FormData): Promise<FinbanImportSumm
   const accountId = new Map<string, string>();
   for (const name of sources) {
     const existing = await prisma.account.findFirst({ where: { name } });
-    const acc = existing ?? (await prisma.account.create({ data: { name, type: "CHECKING" } }));
+    const acc =
+      existing ??
+      (await prisma.account.create({
+        data: {
+          name,
+          type: "CHECKING",
+          openingBalance: 0,
+          openingDate: earliestBySource.get(name) ?? new Date(),
+        },
+      }));
     accountId.set(name, acc.id);
   }
   const fallbackAccount =

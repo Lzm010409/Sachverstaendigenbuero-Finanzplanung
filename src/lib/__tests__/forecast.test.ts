@@ -44,6 +44,63 @@ describe("buildForecast", () => {
     expect(res.endBalance).toBe(210000);
   });
 
+  it("berücksichtigt offene Posten (Einmal-Events)", () => {
+    const res = buildForecast({
+      startBalanceCents: 100000,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [],
+      oneOffs: [
+        { date: d("2026-08-10"), amount: 50000 }, // Forderung
+        { date: d("2026-08-20"), amount: -30000 }, // Verbindlichkeit
+      ],
+    });
+    expect(res.totalInflow).toBe(50000);
+    expect(res.totalOutflow).toBe(30000);
+    expect(res.endBalance).toBe(120000);
+  });
+
+  it("setzt überfällige offene Posten auf heute an", () => {
+    const res = buildForecast({
+      startBalanceCents: 0,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [],
+      oneOffs: [{ date: d("2026-07-15"), amount: 20000 }], // überfällig
+    });
+    expect(res.points[0].inflow).toBe(20000);
+    expect(res.points[0].balance).toBe(20000);
+  });
+
+  it("wendet Szenario-Faktoren an (Worst Case)", () => {
+    const res = buildForecast({
+      startBalanceCents: 100000,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [
+        { amount: 100000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-05") },
+        { amount: -50000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-06") },
+      ],
+      scenario: { inflowFactor: 0.8, outflowFactor: 1.2, inflowShiftDays: 0 },
+    });
+    expect(res.totalInflow).toBe(80000); // 100k * 0.8
+    expect(res.totalOutflow).toBe(60000); // 50k * 1.2
+    expect(res.endBalance).toBe(120000); // 100k + 80k - 60k
+  });
+
+  it("verschiebt Zuflüsse per Szenario-Zahlungsverzug", () => {
+    const res = buildForecast({
+      startBalanceCents: 0,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [{ amount: 10000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-05") }],
+      scenario: { inflowFactor: 1, outflowFactor: 1, inflowShiftDays: 10 },
+    });
+    // Zufluss wandert von 05.08 auf 15.08
+    expect(res.points.find((p) => p.date === "2026-08-05")?.inflow).toBe(0);
+    expect(res.points.find((p) => p.date === "2026-08-15")?.inflow).toBe(10000);
+  });
+
   it("kombiniert mehrere Einträge an einem Tag", () => {
     const res = buildForecast({
       startBalanceCents: 0,

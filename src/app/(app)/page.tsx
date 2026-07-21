@@ -4,6 +4,7 @@ import { formatCents } from "@/lib/money";
 import { prisma } from "@/lib/db";
 import { ForecastChart } from "@/components/forecast-chart";
 import { HorizonSelect } from "@/components/horizon-select";
+import { ScenarioSelect } from "@/components/scenario-select";
 
 export const dynamic = "force-dynamic";
 
@@ -38,23 +39,30 @@ function Stat({
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ h?: string }>;
+  searchParams: Promise<{ h?: string; s?: string }>;
 }) {
   const params = await searchParams;
   const horizon = Math.min(Math.max(Number(params.h) || 90, 7), 365);
+  const scenarioId = params.s || "";
 
-  const [total, forecast, accounts, plannedCount, upcoming] = await Promise.all([
-    getTotalBalanceCents(),
-    getForecast(horizon),
-    getAccountsWithBalance(),
-    prisma.plannedItem.count({ where: { active: true } }),
-    prisma.plannedItem.findMany({
-      where: { active: true },
-      orderBy: { startDate: "asc" },
-      take: 6,
-      include: { category: true },
-    }),
-  ]);
+  const [total, forecast, accounts, plannedCount, upcoming, scenarios, activeScenario] =
+    await Promise.all([
+      getTotalBalanceCents(),
+      getForecast(horizon, scenarioId || undefined),
+      getAccountsWithBalance(),
+      prisma.plannedItem.count({ where: { active: true } }),
+      prisma.plannedItem.findMany({
+        where: { active: true },
+        orderBy: { startDate: "asc" },
+        take: 6,
+        include: { category: true },
+      }),
+      prisma.scenario.findMany({ orderBy: { createdAt: "asc" } }),
+      scenarioId ? prisma.scenario.findUnique({ where: { id: scenarioId } }) : Promise.resolve(null),
+    ]);
+
+  const exportQuery = new URLSearchParams({ h: String(horizon) });
+  if (scenarioId) exportQuery.set("s", scenarioId);
 
   const lowestDate = new Date(forecast.lowest.date).toLocaleDateString("de-DE");
   const lowNegative = forecast.lowest.balance < 0;
@@ -64,9 +72,25 @@ export default async function DashboardPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Übersicht</h1>
-          <p className="text-sm text-slate-500">Liquiditätsvorschau der nächsten {horizon} Tage</p>
+          <p className="text-sm text-slate-500">
+            Liquiditätsvorschau der nächsten {horizon} Tage
+            {activeScenario && (
+              <span className="ml-2 badge bg-amber-100 text-amber-700">
+                Szenario: {activeScenario.name}
+              </span>
+            )}
+          </p>
         </div>
-        <HorizonSelect current={horizon} />
+        <div className="flex flex-wrap items-center gap-2">
+          <ScenarioSelect
+            scenarios={scenarios.map((s) => ({ id: s.id, name: s.name }))}
+            current={scenarioId}
+          />
+          <HorizonSelect current={horizon} />
+          <a className="btn-secondary" href={`/api/export/forecast?${exportQuery.toString()}`}>
+            ⬇ CSV
+          </a>
+        </div>
       </div>
 
       {accounts.length === 0 && (

@@ -8,6 +8,9 @@ const NAV = [
   { href: "/transactions", label: "Umsätze", icon: "💶" },
   { href: "/import", label: "Import", icon: "📥" },
   { href: "/planning", label: "Planung", icon: "🗓️" },
+  { href: "/open-items", label: "Offene Posten", icon: "🧾" },
+  { href: "/scenarios", label: "Szenarien", icon: "🎚️" },
+  { href: "/plan-actual", label: "Plan/Ist", icon: "⚖️" },
   { href: "/categories", label: "Kategorien", icon: "🏷️" },
   { href: "/accounts", label: "Konten", icon: "🏦" },
 ];

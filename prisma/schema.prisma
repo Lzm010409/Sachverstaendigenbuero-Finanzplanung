@@ -36,6 +36,11 @@ enum RuleField {
   PURPOSE // Verwendungszweck
 }
 
+enum OpenItemKind {
+  RECEIVABLE // Forderung (wir erhalten Geld)
+  PAYABLE // Verbindlichkeit (wir zahlen)
+}
+
 model Account {
   id             String        @id @default(cuid())
   name           String
@@ -64,6 +69,7 @@ model Category {
   rules        Rule[]
   transactions Transaction[]
   plannedItems PlannedItem[]
+  openItems    OpenItem[]
   createdAt    DateTime      @default(now())
 
   @@index([kind])
@@ -122,4 +128,36 @@ model PlannedItem {
   createdAt   DateTime    @default(now())
 
   @@index([active])
+}
+
+// Offener Posten: unbezahlte Forderung/Verbindlichkeit mit Fälligkeit.
+// Fließt bis zur Bezahlung als erwarteter Zu-/Abfluss in die Vorschau ein.
+model OpenItem {
+  id           String       @id @default(cuid())
+  kind         OpenItemKind
+  counterparty String       @default("")
+  reference    String? // z.B. Rechnungsnummer
+  amount       Int // Cent, immer positiv; Richtung ergibt sich aus kind
+  issueDate    DateTime?
+  dueDate      DateTime
+  paid         Boolean      @default(false)
+  paidDate     DateTime?
+  categoryId   String?
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  note         String?
+  createdAt    DateTime     @default(now())
+
+  @@index([paid, dueDate])
+}
+
+// Szenario zur Simulation (Best/Base/Worst). Wirkt multiplikativ auf geplante
+// Zu-/Abflüsse und offene Posten und kann Zuflüsse zeitlich verzögern.
+model Scenario {
+  id              String   @id @default(cuid())
+  name            String
+  inflowFactor    Float    @default(1.0) // Faktor auf alle Zuflüsse
+  outflowFactor   Float    @default(1.0) // Faktor auf alle Abflüsse
+  inflowShiftDays Int      @default(0) // Zuflüsse um n Tage nach hinten schieben
+  isDefault       Boolean  @default(false)
+  createdAt       DateTime @default(now())
 }

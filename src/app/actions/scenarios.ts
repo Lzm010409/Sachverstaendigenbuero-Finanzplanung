@@ -1,0 +1,44 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import type { FormState } from "./types";
+
+const schema = z.object({
+  name: z.string().min(1, "Name erforderlich"),
+  inflowFactor: z.string().optional(),
+  outflowFactor: z.string().optional(),
+  inflowShiftDays: z.string().optional(),
+});
+
+function toFactor(v: string | undefined, fallback: number): number {
+  const n = Number(String(v ?? "").replace(",", "."));
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  return n;
+}
+
+export async function createScenario(formData: FormData): Promise<FormState> {
+  const parsed = schema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.errors[0]?.message };
+  const d = parsed.data;
+  await prisma.scenario.create({
+    data: {
+      name: d.name,
+      inflowFactor: toFactor(d.inflowFactor, 1),
+      outflowFactor: toFactor(d.outflowFactor, 1),
+      inflowShiftDays: Math.max(0, Math.round(Number(d.inflowShiftDays) || 0)),
+    },
+  });
+  revalidatePath("/scenarios");
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function deleteScenario(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.scenario.delete({ where: { id } });
+  revalidatePath("/scenarios");
+  revalidatePath("/");
+}

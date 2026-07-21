@@ -11,12 +11,33 @@ export interface ForecastPlannedItem {
   endDate?: Date | null;
 }
 
+export interface ForecastOneOff {
+  date: Date;
+  amount: number; // Cent, vorzeichenbehaftet
+}
+
+export interface ScenarioConfig {
+  inflowFactor: number; // Faktor auf Zuflüsse (1 = unverändert)
+  outflowFactor: number; // Faktor auf Abflüsse
+  inflowShiftDays: number; // Zuflüsse um n Tage nach hinten schieben
+}
+
+export const NEUTRAL_SCENARIO: ScenarioConfig = {
+  inflowFactor: 1,
+  outflowFactor: 1,
+  inflowShiftDays: 0,
+};
+
 export interface ForecastInput {
   /** Gesamtsaldo aller Konten zum Stichtag "today" (Cent). */
   startBalanceCents: number;
   today: Date;
   horizonDays: number;
   plannedItems: ForecastPlannedItem[];
+  /** Einmalige, datumsgenaue Zahlungen (z.B. offene Posten). */
+  oneOffs?: ForecastOneOff[];
+  /** Optionales Szenario; ohne Angabe neutral. */
+  scenario?: ScenarioConfig;
 }
 
 export interface ForecastPoint {
@@ -42,21 +63,45 @@ export function buildForecast(input: ForecastInput): ForecastResult {
   const today = startOfDayUTC(input.today);
   const horizon = Math.max(1, Math.floor(input.horizonDays));
   const end = addDays(today, horizon);
+  const scenario = input.scenario ?? NEUTRAL_SCENARIO;
 
   // Tages-Buckets für Zu-/Abflüsse initialisieren.
   const inflowByDay = new Map<string, number>();
   const outflowByDay = new Map<string, number>();
 
-  for (const item of input.plannedItems) {
-    const occ = occurrencesBetween(item, today, end);
-    for (const date of occ) {
-      const key = isoDate(date);
-      if (item.amount >= 0) {
-        inflowByDay.set(key, (inflowByDay.get(key) ?? 0) + item.amount);
-      } else {
-        outflowByDay.set(key, (outflowByDay.get(key) ?? 0) + -item.amount);
-      }
+  // Verbucht eine Zahlung mit angewandtem Szenario in den passenden Tages-Bucket.
+  const addEvent = (date: Date, amount: number) => {
+    if (amount === 0) return;
+    let effectiveDate = date;
+    let value = amount;
+    if (amount >= 0) {
+      value = Math.round(amount * scenario.inflowFactor);
+      if (scenario.inflowShiftDays) effectiveDate = addDays(date, scenario.inflowShiftDays);
+    } else {
+      value = -Math.round(-amount * scenario.outflowFactor);
     }
+    // Nur innerhalb des Vorschaufensters [today, end] berücksichtigen.
+    if (effectiveDate.getTime() < today.getTime() || effectiveDate.getTime() > end.getTime()) {
+      return;
+    }
+    const key = isoDate(effectiveDate);
+    if (value >= 0) {
+      inflowByDay.set(key, (inflowByDay.get(key) ?? 0) + value);
+    } else {
+      outflowByDay.set(key, (outflowByDay.get(key) ?? 0) + -value);
+    }
+  };
+
+  for (const item of input.plannedItems) {
+    for (const date of occurrencesBetween(item, today, end)) {
+      addEvent(date, item.amount);
+    }
+  }
+
+  for (const oneOff of input.oneOffs ?? []) {
+    // Überfällige, noch offene Posten am heutigen Tag ansetzen.
+    const date = startOfDayUTC(oneOff.date);
+    addEvent(date.getTime() < today.getTime() ? today : date, oneOff.amount);
   }
 
   const points: ForecastPoint[] = [];

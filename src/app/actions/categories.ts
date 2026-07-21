@@ -45,19 +45,35 @@ export async function setCategoryBudget(formData: FormData) {
 const ruleSchema = z.object({
   categoryId: z.string().min(1, "Kategorie erforderlich"),
   field: z.enum(["COUNTERPARTY", "PURPOSE"]),
-  pattern: z.string().min(1, "Muster erforderlich"),
+  pattern: z.string().optional(),
+  amountOp: z.enum(["", "GT", "LT", "GTE", "LTE", "EQ"]).optional(),
+  amountValue: z.string().optional(),
   priority: z.string().optional(),
 });
 
 export async function createRule(formData: FormData): Promise<FormState> {
   const parsed = ruleSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.errors[0]?.message };
+  const d = parsed.data;
+  const pattern = (d.pattern ?? "").trim();
+  const amountOp = d.amountOp || null;
+  const amountValue = amountOp ? parseAmountToCents(d.amountValue ?? "") : null;
+
+  if (!pattern && amountOp == null) {
+    return { error: "Mindestens ein Muster oder eine Betrags-Bedingung angeben." };
+  }
+  if (amountOp && amountValue == null) {
+    return { error: "Betrag für die Bedingung angeben." };
+  }
+
   await prisma.rule.create({
     data: {
-      categoryId: parsed.data.categoryId,
-      field: parsed.data.field,
-      pattern: parsed.data.pattern,
-      priority: Number(parsed.data.priority) || 100,
+      categoryId: d.categoryId,
+      field: d.field,
+      pattern: pattern || null,
+      amountOp,
+      amountValue,
+      priority: Number(d.priority) || 100,
     },
   });
   revalidatePath("/categories");
@@ -71,21 +87,82 @@ export async function deleteRule(formData: FormData) {
   revalidatePath("/categories");
 }
 
-/** Wendet alle aktiven Regeln erneut auf noch nicht kategorisierte Umsätze an. */
+// Aktualisiert die Kategorie vieler Umsätze effizient (gruppiert nach Kategorie).
+async function bulkAssign(byCat: Map<string, string[]>): Promise<number> {
+  let updated = 0;
+  for (const [categoryId, ids] of byCat) {
+    for (let i = 0; i < ids.length; i += 1000) {
+      const chunk = ids.slice(i, i + 1000);
+      await prisma.transaction.updateMany({ where: { id: { in: chunk } }, data: { categoryId } });
+      updated += chunk.length;
+    }
+  }
+  return updated;
+}
+
+/** Wendet alle aktiven Regeln auf noch nicht kategorisierte Umsätze an (Batch). */
 export async function applyRulesToUncategorized() {
   const { categorize } = await import("@/lib/categorize");
   const [rules, txs] = await Promise.all([
     prisma.rule.findMany({ where: { active: true } }),
-    prisma.transaction.findMany({ where: { categoryId: null } }),
+    prisma.transaction.findMany({
+      where: { categoryId: null },
+      select: { id: true, counterparty: true, purpose: true, amount: true },
+    }),
   ]);
-  let updated = 0;
+  const byCat = new Map<string, string[]>();
   for (const tx of txs) {
     const categoryId = categorize(tx, rules);
-    if (categoryId) {
-      await prisma.transaction.update({ where: { id: tx.id }, data: { categoryId } });
-      updated++;
-    }
+    if (categoryId) (byCat.get(categoryId) ?? byCat.set(categoryId, []).get(categoryId)!).push(tx.id);
   }
+  const updated = await bulkAssign(byCat);
+  revalidatePath("/transactions");
+  revalidatePath("/categories");
+  return { updated };
+}
+
+/**
+ * Kategorisiert offene Umsätze anhand bereits kategorisierter Umsätze mit
+ * gleicher Gegenpartei (häufigste Kategorie gewinnt). Ideal, um z.B. aus dem
+ * finban-Import gelernte Kategorien auf neue (sevDesk-)Umsätze zu übertragen.
+ */
+export async function applyHistoryCategorization() {
+  const categorized = await prisma.transaction.findMany({
+    where: { categoryId: { not: null } },
+    select: { counterparty: true, purpose: true, categoryId: true },
+  });
+
+  // Häufigste Kategorie je Gegenpartei (Fallback: je Verwendungszweck-Anfang).
+  const freq = new Map<string, Map<string, number>>();
+  const bump = (key: string, cat: string) => {
+    const k = key.trim().toLowerCase();
+    if (!k) return;
+    if (!freq.has(k)) freq.set(k, new Map());
+    const m = freq.get(k)!;
+    m.set(cat, (m.get(cat) ?? 0) + 1);
+  };
+  for (const t of categorized) {
+    if (!t.categoryId) continue;
+    bump(t.counterparty, t.categoryId);
+  }
+  const best = new Map<string, string>();
+  for (const [key, m] of freq) {
+    let top: string | null = null;
+    let max = 0;
+    for (const [cat, n] of m) if (n > max) ((max = n), (top = cat));
+    if (top) best.set(key, top);
+  }
+
+  const uncategorized = await prisma.transaction.findMany({
+    where: { categoryId: null },
+    select: { id: true, counterparty: true },
+  });
+  const byCat = new Map<string, string[]>();
+  for (const t of uncategorized) {
+    const cat = best.get(t.counterparty.trim().toLowerCase());
+    if (cat) (byCat.get(cat) ?? byCat.set(cat, []).get(cat)!).push(t.id);
+  }
+  const updated = await bulkAssign(byCat);
   revalidatePath("/transactions");
   revalidatePath("/categories");
   return { updated };

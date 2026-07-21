@@ -1,7 +1,12 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
-import { applyRulesToUncategorized, createCategory, createRule } from "@/app/actions/categories";
+import {
+  applyHistoryCategorization,
+  applyRulesToUncategorized,
+  createCategory,
+  createRule,
+} from "@/app/actions/categories";
 
 export function CategoryForm() {
   const ref = useRef<HTMLFormElement>(null);
@@ -57,9 +62,24 @@ export function RuleForm({ categories }: { categories: { id: string; name: strin
           <option value="COUNTERPARTY">Gegenpartei</option>
         </select>
       </div>
-      <div className="min-w-[160px] flex-1">
-        <label className="label">enthält / Regex</label>
-        <input name="pattern" className="input" placeholder="z.B. miete oder /amazon/" required />
+      <div className="min-w-[150px] flex-1">
+        <label className="label">enthält / Regex (optional)</label>
+        <input name="pattern" className="input" placeholder="z.B. miete oder /amazon/" />
+      </div>
+      <div className="w-28">
+        <label className="label">Betrag</label>
+        <select name="amountOp" className="input" defaultValue="">
+          <option value="">—</option>
+          <option value="GT">&gt;</option>
+          <option value="GTE">≥</option>
+          <option value="LT">&lt;</option>
+          <option value="LTE">≤</option>
+          <option value="EQ">=</option>
+        </select>
+      </div>
+      <div className="w-24">
+        <label className="label">Wert (€)</label>
+        <input name="amountValue" className="input" placeholder="0,00" inputMode="decimal" />
       </div>
       <div className="min-w-[140px]">
         <label className="label">Kategorie</label>
@@ -74,7 +94,7 @@ export function RuleForm({ categories }: { categories: { id: string; name: strin
           ))}
         </select>
       </div>
-      <div className="w-20">
+      <div className="w-16">
         <label className="label">Prio</label>
         <input name="priority" type="number" className="input" defaultValue={100} />
       </div>
@@ -89,21 +109,27 @@ export function RuleForm({ categories }: { categories: { id: string; name: strin
 export function ApplyRulesButton() {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+
+  const run = (fn: () => Promise<{ updated: number }>) =>
+    start(async () => {
+      setMsg(null);
+      const res = await fn();
+      setMsg(`${res.updated} Umsätze kategorisiert.`);
+    });
+
   return (
-    <div className="flex items-center gap-3">
-      <button
-        className="btn-secondary"
-        disabled={pending}
-        onClick={() =>
-          start(async () => {
-            const res = await applyRulesToUncategorized();
-            setMsg(`${res.updated} Umsätze kategorisiert.`);
-          })
-        }
-      >
+    <div className="flex flex-wrap items-center gap-3">
+      <button className="btn-secondary" disabled={pending} onClick={() => run(applyRulesToUncategorized)}>
         {pending ? "Wende an…" : "Regeln auf offene Umsätze anwenden"}
       </button>
+      <button className="btn-secondary" disabled={pending} onClick={() => run(applyHistoryCategorization)}>
+        {pending ? "…" : "Aus kategorisierten Umsätzen lernen"}
+      </button>
       {msg && <span className="text-sm text-emerald-600">{msg}</span>}
+      <p className="w-full text-xs text-slate-400">
+        „Aus kategorisierten Umsätzen lernen" überträgt die häufigste Kategorie je Gegenpartei auf
+        noch offene Umsätze – ideal, um viele Umsätze auf einmal zuzuordnen.
+      </p>
     </div>
   );
 }

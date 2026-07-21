@@ -31,17 +31,47 @@ describe("parseCsv", () => {
 });
 
 describe("categorize", () => {
+  const rule = (o: Partial<Parameters<typeof categorize>[1][number]> = {}) => ({
+    id: "1",
+    categoryId: "c",
+    field: "PURPOSE" as const,
+    pattern: null,
+    amountOp: null,
+    amountValue: null,
+    priority: 100,
+    active: true,
+    ...o,
+  });
   const rules = [
-    { id: "1", categoryId: "miete", field: "PURPOSE" as const, pattern: "miete", priority: 10, active: true },
-    { id: "2", categoryId: "gehalt", field: "COUNTERPARTY" as const, pattern: "/muster/", priority: 20, active: true },
+    rule({ id: "1", categoryId: "miete", field: "PURPOSE", pattern: "miete", priority: 10 }),
+    rule({ id: "2", categoryId: "gehalt", field: "COUNTERPARTY", pattern: "/muster/", priority: 20 }),
   ];
   it("matcht per Teilstring im Verwendungszweck", () => {
-    expect(categorize({ counterparty: "X", purpose: "Buero Miete Juli" }, rules)).toBe("miete");
+    expect(categorize({ counterparty: "X", purpose: "Buero Miete Juli", amount: -100 }, rules)).toBe("miete");
   });
   it("matcht per Regex in der Gegenpartei", () => {
-    expect(categorize({ counterparty: "Muster GmbH", purpose: "Lohn" }, rules)).toBe("gehalt");
+    expect(categorize({ counterparty: "Muster GmbH", purpose: "Lohn", amount: 100 }, rules)).toBe("gehalt");
   });
   it("liefert null ohne Treffer", () => {
-    expect(categorize({ counterparty: "Foo", purpose: "Bar" }, rules)).toBeNull();
+    expect(categorize({ counterparty: "Foo", purpose: "Bar", amount: 1 }, rules)).toBeNull();
+  });
+
+  it("betrags-Bedingung: nur positive Beträge (Einnahmen)", () => {
+    const r = [rule({ categoryId: "einnahme", amountOp: "GT", amountValue: 0 })];
+    expect(categorize({ counterparty: "X", purpose: "y", amount: 5000 }, r)).toBe("einnahme");
+    expect(categorize({ counterparty: "X", purpose: "y", amount: -5000 }, r)).toBeNull();
+  });
+
+  it("kombiniert Text UND Betrag (beide müssen passen)", () => {
+    const r = [rule({ categoryId: "grossmiete", pattern: "miete", amountOp: "LTE", amountValue: -100000 })];
+    expect(categorize({ counterparty: "", purpose: "Miete Büro", amount: -150000 }, r)).toBe("grossmiete");
+    // Text passt, Betrag nicht (zu klein im Betrag = -50000 > -100000)
+    expect(categorize({ counterparty: "", purpose: "Miete Büro", amount: -50000 }, r)).toBeNull();
+  });
+
+  it("EQ trifft exakten Betrag", () => {
+    const r = [rule({ categoryId: "abo", amountOp: "EQ", amountValue: -8990 })];
+    expect(categorize({ counterparty: "", purpose: "", amount: -8990 }, r)).toBe("abo");
+    expect(categorize({ counterparty: "", purpose: "", amount: -8991 }, r)).toBeNull();
   });
 });

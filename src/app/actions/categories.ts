@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
+import { parseAmountToCents } from "@/lib/money";
 import type { FormState } from "./types";
 
 const catSchema = z.object({
@@ -30,6 +31,15 @@ export async function deleteCategory(formData: FormData) {
   if (!id) return;
   await prisma.category.delete({ where: { id } });
   revalidatePath("/categories");
+}
+
+export async function setCategoryBudget(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const cents = parseAmountToCents(String(formData.get("annualBudget") ?? "")) ?? 0;
+  await prisma.category.update({ where: { id }, data: { annualBudget: Math.abs(cents) } });
+  revalidatePath("/categories");
+  revalidatePath("/breakdown");
 }
 
 const ruleSchema = z.object({

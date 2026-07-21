@@ -20,10 +20,40 @@ function firstOfMonth(offset: number): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + offset, 1));
 }
 
+// Jahresbudgets je Kategorie (in Euro) für die Demo.
+const BUDGETS_EUR: Record<string, number> = {
+  "Honorare / Gutachten": 60000,
+  "Sonstige Einnahmen": 6000,
+  "Miete / Büro": 17400,
+  "Gehälter / Personal": 38400,
+  Versicherungen: 1200,
+  "Kfz / Reisekosten": 1800,
+  "Software / IT": 2400,
+  "Steuern / Abgaben": 8400,
+  Bankgebühren: 200,
+};
+
+// Setzt Budgets auf Demo-Kategorien, die noch keines haben (idempotent).
+async function ensureBudgets() {
+  for (const [name, eur] of Object.entries(BUDGETS_EUR)) {
+    await prisma.category.updateMany({
+      where: { name, annualBudget: 0 },
+      data: { annualBudget: Math.round(eur * 100) },
+    });
+  }
+}
+
 async function main() {
   const existing = await prisma.account.count();
+  const demoAccount = await prisma.account.findFirst({ where: { name: "Geschäftskonto" } });
   if (existing > 0) {
-    console.log(`Demo-Seed übersprungen: es existieren bereits ${existing} Konten.`);
+    // Bei bestehender Demo-Umgebung nur die Budgets nachziehen.
+    if (demoAccount) {
+      await ensureBudgets();
+      console.log("Demo-Seed: Konten vorhanden – Budgets für Demo-Kategorien aktualisiert.");
+    } else {
+      console.log(`Demo-Seed übersprungen: es existieren bereits ${existing} Konten.`);
+    }
     return;
   }
 
@@ -161,6 +191,8 @@ async function main() {
       { name: "Best Case", inflowFactor: 1.1, outflowFactor: 0.97, inflowShiftDays: 0 },
     ],
   });
+
+  await ensureBudgets();
 
   const txCount = await prisma.transaction.count();
   console.log(

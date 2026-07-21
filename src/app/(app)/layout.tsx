@@ -6,6 +6,7 @@ import { NavLink } from "@/components/nav-link";
 
 const NAV = [
   { href: "/", label: "Übersicht", icon: "📊" },
+  { href: "/breakdown", label: "Auswertung", icon: "📈" },
   { href: "/transactions", label: "Umsätze", icon: "💶" },
   { href: "/import", label: "Import", icon: "📥" },
   { href: "/planning", label: "Planung", icon: "🗓️" },

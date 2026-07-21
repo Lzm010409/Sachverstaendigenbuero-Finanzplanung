@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getAccountsWithBalance, getForecast, getTotalBalanceCents } from "@/lib/queries";
+import { getKpis } from "@/lib/analytics";
 import { formatCents } from "@/lib/money";
 import { prisma } from "@/lib/db";
 import { ForecastChart } from "@/components/forecast-chart";
@@ -45,7 +46,7 @@ export default async function DashboardPage({
   const horizon = Math.min(Math.max(Number(params.h) || 90, 7), 365);
   const scenarioId = params.s || "";
 
-  const [total, forecast, accounts, plannedCount, upcoming, scenarios, activeScenario] =
+  const [total, forecast, accounts, plannedCount, upcoming, scenarios, activeScenario, kpis] =
     await Promise.all([
       getTotalBalanceCents(),
       getForecast(horizon, scenarioId || undefined),
@@ -59,6 +60,7 @@ export default async function DashboardPage({
       }),
       prisma.scenario.findMany({ orderBy: { createdAt: "asc" } }),
       scenarioId ? prisma.scenario.findUnique({ where: { id: scenarioId } }) : Promise.resolve(null),
+      getKpis(),
     ]);
 
   const exportQuery = new URLSearchParams({ h: String(horizon) });
@@ -133,6 +135,29 @@ export default async function DashboardPage({
           value={formatCents(forecast.totalOutflow)}
           tone="default"
           hint={`${plannedCount} aktive Planposten`}
+        />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <Stat label="Ø Einnahmen / Monat" value={formatCents(kpis.avgMonthlyIncome)} tone="positive" hint="letzte 3 Monate" />
+        <Stat label="Ø Ausgaben / Monat" value={formatCents(-kpis.avgMonthlyExpense)} hint="letzte 3 Monate" />
+        <Stat
+          label="Netto / Monat"
+          value={formatCents(kpis.netMonthly)}
+          tone={kpis.netMonthly < 0 ? "negative" : "positive"}
+          hint={kpis.netMonthly < 0 ? "Liquidität wird verbraucht" : "Überschuss"}
+        />
+        <Stat
+          label="Reichweite"
+          value={kpis.runwayMonths == null ? "∞" : `${kpis.runwayMonths} Mon.`}
+          tone={kpis.runwayMonths != null && kpis.runwayMonths < 6 ? "warning" : "default"}
+          hint={kpis.runwayMonths == null ? "kein Netto-Verbrauch" : "bei aktuellem Burn"}
+        />
+        <Stat
+          label="Working Capital"
+          value={formatCents(kpis.workingCapital)}
+          tone={kpis.workingCapital < 0 ? "negative" : "default"}
+          hint="Saldo + Ford. − Verb."
         />
       </div>
 

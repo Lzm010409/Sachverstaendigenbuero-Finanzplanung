@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/db";
 import { deleteCategory, deleteRule } from "@/app/actions/categories";
 import { ApplyRulesButton, CategoryForm, RuleForm } from "./category-forms";
+import { BudgetInput } from "./budget-input";
+
+function budgetToInput(cents: number): string {
+  return cents > 0 ? (cents / 100).toFixed(2).replace(".", ",") : "";
+}
 
 export const dynamic = "force-dynamic";
 
@@ -28,29 +33,45 @@ export default async function CategoriesPage() {
       </div>
 
       <div className="card">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Kategorien</h2>
+        <h2 className="mb-3 text-sm font-semibold text-slate-700">Kategorien &amp; Budgets</h2>
         {categories.length === 0 ? (
           <p className="text-sm text-slate-400">Noch keine Kategorien.</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {categories.map((c) => (
-              <div
-                key={c.id}
-                className="flex items-center gap-2 rounded-full border border-slate-200 py-1 pl-2 pr-1 text-sm"
-              >
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: c.color }} />
-                <span>{c.name}</span>
-                <span className="text-xs text-slate-400">
-                  {c.kind === "INCOME" ? "Einnahme" : "Ausgabe"} · {c._count.transactions}
-                </span>
-                <form action={deleteCategory}>
-                  <input type="hidden" name="id" value={c.id} />
-                  <button className="rounded-full px-1 text-slate-400 hover:text-red-600" title="löschen">
-                    ×
-                  </button>
-                </form>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="th">Kategorie</th>
+                  <th className="th">Art</th>
+                  <th className="th">Umsätze</th>
+                  <th className="th text-right">Jahresbudget</th>
+                  <th className="th"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((c) => (
+                  <tr key={c.id} className="border-b border-slate-50">
+                    <td className="td font-medium">
+                      <span className="mr-2 inline-block h-3 w-3 rounded-full align-middle" style={{ backgroundColor: c.color }} />
+                      {c.name}
+                    </td>
+                    <td className="td">{c.kind === "INCOME" ? "Einnahme" : "Ausgabe"}</td>
+                    <td className="td">{c._count.transactions}</td>
+                    <td className="td text-right">
+                      <BudgetInput id={c.id} initial={budgetToInput(c.annualBudget)} />
+                    </td>
+                    <td className="td text-right">
+                      <form action={deleteCategory}>
+                        <input type="hidden" name="id" value={c.id} />
+                        <button className="text-xs text-slate-400 hover:text-red-600" title="löschen">
+                          löschen
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

@@ -6,6 +6,7 @@ import {
   applyRulesToUncategorized,
   createCategory,
   createRule,
+  resetAllTransactionCategories,
 } from "@/app/actions/categories";
 
 export function CategoryForm() {
@@ -130,6 +131,34 @@ export function ApplyRulesButton() {
         „Aus kategorisierten Umsätzen lernen" überträgt die häufigste Kategorie je Gegenpartei auf
         noch offene Umsätze – ideal, um viele Umsätze auf einmal zuzuordnen.
       </p>
+    </div>
+  );
+}
+
+export function ResetCategoriesButton() {
+  const [pending, start] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <button
+        className="btn-danger"
+        disabled={pending}
+        onClick={() => {
+          if (
+            !confirm(
+              "Wirklich ALLE Kategorie-Zuordnungen entfernen?\n\nDie Umsätze selbst bleiben erhalten – nur die Kategorien werden geleert. Danach kannst du neu kategorisieren.",
+            )
+          )
+            return;
+          start(async () => {
+            const r = await resetAllTransactionCategories();
+            setMsg(`${r.updated} Umsätze zurückgesetzt.`);
+          });
+        }}
+      >
+        {pending ? "Setze zurück…" : "Alle Kategorien zurücksetzen"}
+      </button>
+      {msg && <span className="text-sm text-emerald-600">{msg}</span>}
     </div>
   );
 }

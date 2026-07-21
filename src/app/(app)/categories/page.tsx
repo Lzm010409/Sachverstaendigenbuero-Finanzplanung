@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { deleteCategory, deleteRule } from "@/app/actions/categories";
-import { ApplyRulesButton, CategoryForm, RuleForm } from "./category-forms";
+import { ApplyRulesButton, CategoryForm, ResetCategoriesButton, RuleForm } from "./category-forms";
 import { BudgetInput } from "./budget-input";
 import { formatCents } from "@/lib/money";
 
@@ -130,6 +130,13 @@ export default async function CategoriesPage() {
               </div>
             )}
             <ApplyRulesButton />
+            <div className="border-t border-slate-100 pt-3">
+              <ResetCategoriesButton />
+              <p className="mt-1 text-xs text-slate-400">
+                Setzt die Kategorie aller Umsätze zurück (die Umsätze bleiben erhalten). Einzelne
+                Umsätze kannst du auf der Seite <strong>Umsätze</strong> direkt umkategorisieren.
+              </p>
+            </div>
           </div>
         )}
       </div>

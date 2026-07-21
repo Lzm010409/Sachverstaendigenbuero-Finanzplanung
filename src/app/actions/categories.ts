@@ -121,6 +121,30 @@ export async function applyRulesToUncategorized() {
   return { updated };
 }
 
+/** Entfernt die Kategorie-Zuordnung von ALLEN Umsätzen (Umsätze bleiben erhalten). */
+export async function resetAllTransactionCategories() {
+  const r = await prisma.transaction.updateMany({ data: { categoryId: null } });
+  revalidatePath("/transactions");
+  revalidatePath("/categories");
+  revalidatePath("/breakdown");
+  revalidatePath("/");
+  return { updated: r.count };
+}
+
+/** Entfernt die Kategorie-Zuordnung der Umsätze eines Kontos. */
+export async function resetAccountCategories(formData: FormData) {
+  const accountId = String(formData.get("accountId") ?? "");
+  if (!accountId) return { updated: 0 };
+  const r = await prisma.transaction.updateMany({
+    where: { accountId },
+    data: { categoryId: null },
+  });
+  revalidatePath("/transactions");
+  revalidatePath("/breakdown");
+  revalidatePath("/");
+  return { updated: r.count };
+}
+
 /**
  * Kategorisiert offene Umsätze anhand bereits kategorisierter Umsätze mit
  * gleicher Gegenpartei (häufigste Kategorie gewinnt). Ideal, um z.B. aus dem

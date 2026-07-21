@@ -9,17 +9,21 @@ export interface ForecastPlannedItem {
   interval: number;
   startDate: Date;
   endDate?: Date | null;
+  categoryId?: string | null;
 }
 
 export interface ForecastOneOff {
   date: Date;
   amount: number; // Cent, vorzeichenbehaftet
+  categoryId?: string | null;
 }
 
 export interface ScenarioConfig {
-  inflowFactor: number; // Faktor auf Zuflüsse (1 = unverändert)
-  outflowFactor: number; // Faktor auf Abflüsse
+  inflowFactor: number; // globaler Faktor auf Zuflüsse (1 = unverändert)
+  outflowFactor: number; // globaler Faktor auf Abflüsse
   inflowShiftDays: number; // Zuflüsse um n Tage nach hinten schieben
+  // Kategoriespezifische Faktoren (categoryId -> Faktor), überschreiben global.
+  categoryFactors?: Record<string, number>;
 }
 
 export const NEUTRAL_SCENARIO: ScenarioConfig = {
@@ -69,16 +73,23 @@ export function buildForecast(input: ForecastInput): ForecastResult {
   const inflowByDay = new Map<string, number>();
   const outflowByDay = new Map<string, number>();
 
+  const catFactors = scenario.categoryFactors ?? {};
+
   // Verbucht eine Zahlung mit angewandtem Szenario in den passenden Tages-Bucket.
-  const addEvent = (date: Date, amount: number) => {
+  const addEvent = (date: Date, amount: number, categoryId?: string | null) => {
     if (amount === 0) return;
+    // Kategoriespezifischer Faktor überschreibt den globalen.
+    const override =
+      categoryId != null && catFactors[categoryId] !== undefined ? catFactors[categoryId] : undefined;
     let effectiveDate = date;
     let value = amount;
     if (amount >= 0) {
-      value = Math.round(amount * scenario.inflowFactor);
+      const factor = override !== undefined ? override : scenario.inflowFactor;
+      value = Math.round(amount * factor);
       if (scenario.inflowShiftDays) effectiveDate = addDays(date, scenario.inflowShiftDays);
     } else {
-      value = -Math.round(-amount * scenario.outflowFactor);
+      const factor = override !== undefined ? override : scenario.outflowFactor;
+      value = -Math.round(-amount * factor);
     }
     // Nur innerhalb des Vorschaufensters [today, end] berücksichtigen.
     if (effectiveDate.getTime() < today.getTime() || effectiveDate.getTime() > end.getTime()) {
@@ -94,14 +105,14 @@ export function buildForecast(input: ForecastInput): ForecastResult {
 
   for (const item of input.plannedItems) {
     for (const date of occurrencesBetween(item, today, end)) {
-      addEvent(date, item.amount);
+      addEvent(date, item.amount, item.categoryId);
     }
   }
 
   for (const oneOff of input.oneOffs ?? []) {
     // Überfällige, noch offene Posten am heutigen Tag ansetzen.
     const date = startOfDayUTC(oneOff.date);
-    addEvent(date.getTime() < today.getTime() ? today : date, oneOff.amount);
+    addEvent(date.getTime() < today.getTime() ? today : date, oneOff.amount, oneOff.categoryId);
   }
 
   const points: ForecastPoint[] = [];

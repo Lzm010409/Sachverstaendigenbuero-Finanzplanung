@@ -63,18 +63,25 @@ export async function getOpenItemOneOffs(): Promise<ForecastOneOff[]> {
   return items.map((i) => ({
     date: i.dueDate,
     amount: i.kind === "RECEIVABLE" ? i.amount : -i.amount,
+    categoryId: i.categoryId,
   }));
 }
 
-/** Lädt die Szenario-Konfiguration oder null (= neutral). */
+/** Lädt die Szenario-Konfiguration (inkl. kategoriespezifischer Faktoren) oder undefined. */
 export async function getScenarioConfig(scenarioId?: string): Promise<ScenarioConfig | undefined> {
   if (!scenarioId) return undefined;
-  const s = await prisma.scenario.findUnique({ where: { id: scenarioId } });
+  const s = await prisma.scenario.findUnique({
+    where: { id: scenarioId },
+    include: { categoryAdjustments: true },
+  });
   if (!s) return undefined;
   return {
     inflowFactor: s.inflowFactor,
     outflowFactor: s.outflowFactor,
     inflowShiftDays: s.inflowShiftDays,
+    categoryFactors: Object.fromEntries(
+      s.categoryAdjustments.map((a) => [a.categoryId, a.factor]),
+    ),
   };
 }
 
@@ -101,6 +108,7 @@ export async function getForecast(horizonDays = 90, scenarioId?: string): Promis
       interval: p.interval,
       startDate: p.startDate,
       endDate: p.endDate,
+      categoryId: p.categoryId,
     })),
   });
 }

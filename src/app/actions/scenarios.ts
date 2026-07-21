@@ -42,3 +42,26 @@ export async function deleteScenario(formData: FormData) {
   revalidatePath("/scenarios");
   revalidatePath("/");
 }
+
+/** Legt einen kategoriespezifischen Faktor an oder aktualisiert ihn (Upsert). */
+export async function setScenarioAdjustment(formData: FormData): Promise<void> {
+  const scenarioId = String(formData.get("scenarioId") ?? "");
+  const categoryId = String(formData.get("categoryId") ?? "");
+  if (!scenarioId || !categoryId) return;
+  const factor = toFactor(String(formData.get("factor") ?? ""), 1);
+  await prisma.scenarioCategoryAdjustment.upsert({
+    where: { scenarioId_categoryId: { scenarioId, categoryId } },
+    create: { scenarioId, categoryId, factor },
+    update: { factor },
+  });
+  revalidatePath("/scenarios");
+  revalidatePath("/");
+}
+
+export async function deleteScenarioAdjustment(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.scenarioCategoryAdjustment.delete({ where: { id } });
+  revalidatePath("/scenarios");
+  revalidatePath("/");
+}

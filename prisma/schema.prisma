@@ -72,6 +72,7 @@ model Category {
   transactions Transaction[]
   plannedItems PlannedItem[]
   openItems    OpenItem[]
+  scenarioAdjustments ScenarioCategoryAdjustment[]
   createdAt    DateTime      @default(now())
 
   @@index([kind])
@@ -155,11 +156,25 @@ model OpenItem {
 // Szenario zur Simulation (Best/Base/Worst). Wirkt multiplikativ auf geplante
 // Zu-/Abflüsse und offene Posten und kann Zuflüsse zeitlich verzögern.
 model Scenario {
-  id              String   @id @default(cuid())
-  name            String
-  inflowFactor    Float    @default(1.0) // Faktor auf alle Zuflüsse
-  outflowFactor   Float    @default(1.0) // Faktor auf alle Abflüsse
-  inflowShiftDays Int      @default(0) // Zuflüsse um n Tage nach hinten schieben
-  isDefault       Boolean  @default(false)
-  createdAt       DateTime @default(now())
+  id                 String                       @id @default(cuid())
+  name               String
+  inflowFactor       Float                        @default(1.0) // globaler Faktor auf Zuflüsse
+  outflowFactor      Float                        @default(1.0) // globaler Faktor auf Abflüsse
+  inflowShiftDays    Int                          @default(0) // Zuflüsse um n Tage nach hinten schieben
+  isDefault          Boolean                      @default(false)
+  categoryAdjustments ScenarioCategoryAdjustment[]
+  createdAt          DateTime                     @default(now())
+}
+
+// Kategoriespezifischer Faktor innerhalb eines Szenarios (überschreibt den
+// globalen Faktor für Beträge dieser Kategorie).
+model ScenarioCategoryAdjustment {
+  id         String   @id @default(cuid())
+  scenarioId String
+  scenario   Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  factor     Float    @default(1.0)
+
+  @@unique([scenarioId, categoryId])
 }

@@ -88,6 +88,29 @@ describe("buildForecast", () => {
     expect(res.endBalance).toBe(120000); // 100k + 80k - 60k
   });
 
+  it("wendet kategoriespezifische Faktoren an (überschreiben global)", () => {
+    const res = buildForecast({
+      startBalanceCents: 0,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [
+        { amount: 100000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-05"), categoryId: "honorar" },
+        { amount: 100000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-06"), categoryId: "sonstige" },
+        { amount: -50000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-07"), categoryId: "miete" },
+      ],
+      scenario: {
+        inflowFactor: 1,
+        outflowFactor: 1,
+        inflowShiftDays: 0,
+        // Honorare halbieren, Miete verdoppeln; "sonstige" bleibt global (×1)
+        categoryFactors: { honorar: 0.5, miete: 2 },
+      },
+    });
+    expect(res.totalInflow).toBe(150000); // 100k*0.5 + 100k*1
+    expect(res.totalOutflow).toBe(100000); // 50k*2
+    expect(res.endBalance).toBe(50000);
+  });
+
   it("verschiebt Zuflüsse per Szenario-Zahlungsverzug", () => {
     const res = buildForecast({
       startBalanceCents: 0,

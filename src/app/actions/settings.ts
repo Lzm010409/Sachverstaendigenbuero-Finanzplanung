@@ -8,7 +8,13 @@ import {
   getSevdeskToken,
   setSetting,
 } from "@/lib/settings";
-import { fetchAccountBalanceCents, fetchCheckAccounts, fetchTransactions } from "@/lib/sevdesk";
+import {
+  fetchAccountBalanceCents,
+  fetchCheckAccounts,
+  fetchOpenInvoices,
+  fetchOpenVouchers,
+  fetchTransactions,
+} from "@/lib/sevdesk";
 import { fetchOrganizations, fetchPersons } from "@/lib/pipedrive";
 import { importHash } from "@/lib/import/hash";
 import { categorize } from "@/lib/categorize";
@@ -138,6 +144,89 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
   revalidatePath("/transactions");
   revalidatePath("/accounts");
   return { accounts: sevAccounts.length, imported, categorized, reconciled, lastSync: now };
+}
+
+export interface SevdeskDocsResult {
+  error?: string;
+  receivables?: number;
+  payables?: number;
+  closed?: number;
+  lastSync?: string;
+}
+
+/**
+ * Importiert offene sevDesk-Rechnungen (Forderungen) und Belege
+ * (Verbindlichkeiten) als offene Posten für die vorausschauende Vorschau.
+ * Bezahlte/nicht mehr offene Posten werden als bezahlt markiert.
+ */
+export async function syncSevdeskDocuments(): Promise<SevdeskDocsResult> {
+  const token = await getSevdeskToken();
+  if (!token) return { error: "Kein sevDesk-Token hinterlegt." };
+
+  let items;
+  try {
+    const [invoices, vouchers] = await Promise.all([
+      fetchOpenInvoices(token),
+      fetchOpenVouchers(token),
+    ]);
+    items = [...invoices, ...vouchers];
+  } catch (e) {
+    return { error: `Beleg-Sync fehlgeschlagen: ${(e as Error).message}` };
+  }
+
+  const seen = new Set<string>();
+  let receivables = 0;
+  let payables = 0;
+  for (const it of items) {
+    seen.add(`${it.source}:${it.externalId}`);
+    await prisma.openItem.upsert({
+      where: { source_externalId: { source: it.source, externalId: it.externalId } },
+      create: {
+        kind: it.kind,
+        counterparty: it.counterparty,
+        reference: it.reference,
+        amount: it.amountCents,
+        dueDate: it.dueDate,
+        externalId: it.externalId,
+        source: it.source,
+        note: "sevDesk",
+      },
+      update: {
+        kind: it.kind,
+        counterparty: it.counterparty,
+        reference: it.reference,
+        amount: it.amountCents,
+        dueDate: it.dueDate,
+        paid: false,
+      },
+    });
+    if (it.kind === "RECEIVABLE") receivables++;
+    else payables++;
+  }
+
+  // Nicht mehr offene sevDesk-Posten als bezahlt markieren.
+  const existing = await prisma.openItem.findMany({
+    where: { source: { in: ["sevdesk-invoice", "sevdesk-voucher"] }, paid: false },
+    select: { id: true, source: true, externalId: true },
+  });
+  const toClose = existing
+    .filter((e) => !seen.has(`${e.source}:${e.externalId}`))
+    .map((e) => e.id);
+  let closed = 0;
+  if (toClose.length) {
+    const r = await prisma.openItem.updateMany({
+      where: { id: { in: toClose } },
+      data: { paid: true, paidDate: new Date() },
+    });
+    closed = r.count;
+  }
+
+  const now = new Date().toISOString();
+  await setSetting("sevdesk.docsLastSync", now);
+  revalidatePath("/settings");
+  revalidatePath("/open-items");
+  revalidatePath("/");
+  return { receivables, payables, closed, lastSync: now };
 }
 
 export interface PipedriveSyncResult {

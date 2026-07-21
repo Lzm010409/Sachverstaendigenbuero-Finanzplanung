@@ -186,6 +186,8 @@ model OpenItem {
   kind         OpenItemKind
   counterparty String       @default("")
   reference    String? // z.B. Rechnungsnummer
+  externalId   String? // ID im Quellsystem (z.B. sevDesk)
+  source       String? // Herkunft, z.B. "sevdesk-invoice" / "sevdesk-voucher"
   amount       Int // Cent, immer positiv; Richtung ergibt sich aus kind
   issueDate    DateTime?
   dueDate      DateTime
@@ -196,6 +198,7 @@ model OpenItem {
   note         String?
   createdAt    DateTime     @default(now())
 
+  @@unique([source, externalId])
   @@index([paid, dueDate])
 }
 

@@ -112,6 +112,93 @@ export function mapTransaction(o: RawSevObject): MappedTransaction | null {
   };
 }
 
+export interface SevdeskOpenItem {
+  externalId: string;
+  source: string;
+  kind: "RECEIVABLE" | "PAYABLE";
+  counterparty: string;
+  reference: string | null;
+  amountCents: number; // positiv
+  dueDate: Date;
+}
+
+function firstStr(o: RawSevObject, keys: string[]): string {
+  for (const k of keys) {
+    const v = o[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+    if (typeof v === "object" && v !== null) {
+      const nm = (v as RawSevObject).name;
+      if (typeof nm === "string" && nm.trim()) return nm.trim();
+    }
+  }
+  return "";
+}
+
+function firstDate(o: RawSevObject, keys: string[]): Date | null {
+  for (const k of keys) {
+    const s = o[k] != null ? String(o[k]) : "";
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+    if (m) return startOfDayUTC(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])));
+  }
+  return null;
+}
+
+// Rechnungen (Ausgangsrechnungen) -> offene Forderungen (nur unbezahlte).
+export async function fetchOpenInvoices(token: string): Promise<SevdeskOpenItem[]> {
+  const objs = await sevGet(`/Invoice?limit=1000&embed=contact`, token);
+  const out: SevdeskOpenItem[] = [];
+  for (const o of objs) {
+    const status = Number(o.status ?? 0);
+    if (status < 200 || status >= 1000) continue; // Entwürfe/bezahlte überspringen
+    const amount = toNumberOrNull(o.sumGross ?? o.sumgross);
+    if (amount == null || amount === 0) continue;
+    const date = firstDate(o, ["invoiceDate", "deliveryDate", "createDate"]) ?? startOfDayUTC(new Date());
+    const timeToPay = Number(o.timeToPay ?? 0);
+    const due = firstDate(o, ["payDate"]) ?? addDaysLocal(date, Number.isFinite(timeToPay) ? timeToPay : 0);
+    out.push({
+      externalId: String(o.id),
+      source: "sevdesk-invoice",
+      kind: "RECEIVABLE",
+      counterparty: firstStr(o, ["contact", "contactName", "header"]) || "Rechnung",
+      reference: firstStr(o, ["invoiceNumber", "header"]) || null,
+      amountCents: Math.round(Math.abs(amount) * 100),
+      dueDate: due,
+    });
+  }
+  return out;
+}
+
+// Belege (Eingangsrechnungen/Ausgaben) -> offene Verbindlichkeiten (unbezahlt).
+export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[]> {
+  const objs = await sevGet(`/Voucher?limit=1000&embed=supplier`, token);
+  const out: SevdeskOpenItem[] = [];
+  for (const o of objs) {
+    const status = Number(o.status ?? 0);
+    if (status < 100 || status >= 1000) continue; // Entwürfe/bezahlte überspringen
+    const amount = toNumberOrNull(o.sumGross ?? o.sumgross);
+    if (amount == null || amount === 0) continue;
+    const isIncome = String(o.creditDebit ?? "D").toUpperCase() === "C";
+    const date = firstDate(o, ["voucherDate", "createDate"]) ?? startOfDayUTC(new Date());
+    const due = firstDate(o, ["payDate", "deliveryDate"]) ?? date;
+    out.push({
+      externalId: String(o.id),
+      source: "sevdesk-voucher",
+      kind: isIncome ? "RECEIVABLE" : "PAYABLE",
+      counterparty: firstStr(o, ["supplier", "supplierName", "description", "creditDebit"]) || "Beleg",
+      reference: firstStr(o, ["voucherNumber", "description"]) || null,
+      amountCents: Math.round(Math.abs(amount) * 100),
+      dueDate: due,
+    });
+  }
+  return out;
+}
+
+function addDaysLocal(d: Date, days: number): Date {
+  const r = new Date(d);
+  r.setUTCDate(r.getUTCDate() + (Number.isFinite(days) ? days : 0));
+  return startOfDayUTC(r);
+}
+
 /** Lädt alle Umsätze eines Kontos (paginiert). */
 export async function fetchTransactions(
   token: string,

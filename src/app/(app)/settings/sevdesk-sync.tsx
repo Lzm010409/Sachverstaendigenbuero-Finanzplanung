@@ -1,31 +1,49 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { syncSevdesk, type SevdeskSyncResult } from "@/app/actions/settings";
+import {
+  syncSevdesk,
+  syncSevdeskDocuments,
+  type SevdeskDocsResult,
+  type SevdeskSyncResult,
+} from "@/app/actions/settings";
 
 export function SevdeskSync() {
   const [pending, start] = useTransition();
-  const [result, setResult] = useState<SevdeskSyncResult | null>(null);
+  const [txResult, setTxResult] = useState<SevdeskSyncResult | null>(null);
+  const [docResult, setDocResult] = useState<SevdeskDocsResult | null>(null);
 
   return (
-    <div className="space-y-2">
-      <button
-        className="btn-primary"
-        disabled={pending}
-        onClick={() =>
-          start(async () => {
-            setResult(await syncSevdesk());
-          })
-        }
-      >
-        {pending ? "Synchronisiere…" : "Jetzt synchronisieren"}
-      </button>
-      {result?.error && <p className="text-sm text-red-600">{result.error}</p>}
-      {result && !result.error && (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <button
+          className="btn-primary"
+          disabled={pending}
+          onClick={() => start(async () => setTxResult(await syncSevdesk()))}
+        >
+          {pending ? "…" : "Umsätze synchronisieren"}
+        </button>
+        <button
+          className="btn-secondary"
+          disabled={pending}
+          onClick={() => start(async () => setDocResult(await syncSevdeskDocuments()))}
+        >
+          {pending ? "…" : "Rechnungen & Belege synchronisieren"}
+        </button>
+      </div>
+
+      {txResult?.error && <p className="text-sm text-red-600">{txResult.error}</p>}
+      {txResult && !txResult.error && (
         <p className="text-sm text-emerald-700">
-          {result.accounts} Konten geprüft, {result.imported} neue Umsätze importiert (
-          {result.categorized} kategorisiert), {result.reconciled ?? 0} Kontostände mit sevDesk
-          abgeglichen.
+          {txResult.accounts} Konten geprüft, {txResult.imported} neue Umsätze (
+          {txResult.categorized} kategorisiert), {txResult.reconciled ?? 0} Salden abgeglichen.
+        </p>
+      )}
+      {docResult?.error && <p className="text-sm text-red-600">{docResult.error}</p>}
+      {docResult && !docResult.error && (
+        <p className="text-sm text-emerald-700">
+          {docResult.receivables} offene Forderungen, {docResult.payables} Verbindlichkeiten
+          importiert, {docResult.closed ?? 0} als bezahlt markiert.
         </p>
       )}
     </div>

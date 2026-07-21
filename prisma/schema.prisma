@@ -41,11 +41,21 @@ enum OpenItemKind {
   PAYABLE // Verbindlichkeit (wir zahlen)
 }
 
+// Einfacher Schlüssel-Wert-Speicher für App-Einstellungen (Integrationen etc.).
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 model Account {
   id             String        @id @default(cuid())
   name           String
   type           AccountType   @default(CHECKING)
   iban           String?
+  // Externe ID zur Zuordnung bei Integrationen (z.B. sevDesk CheckAccount-ID).
+  externalId     String?
+  source         String? // Herkunft, z.B. "sevdesk"
   currency       String        @default("EUR")
   // Anfangssaldo in Cent zum Startdatum (alles davor ist im Saldo bereits enthalten)
   openingBalance Int           @default(0)

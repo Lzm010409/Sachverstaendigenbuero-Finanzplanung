@@ -1,0 +1,108 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/db";
+import { getSevdeskToken, setSetting } from "@/lib/settings";
+import { fetchCheckAccounts, fetchTransactions } from "@/lib/sevdesk";
+import { importHash } from "@/lib/import/hash";
+import { categorize } from "@/lib/categorize";
+
+export async function toggleIntegration(formData: FormData) {
+  const name = String(formData.get("name") ?? "");
+  const enabled = String(formData.get("enabled") ?? "") === "true";
+  if (!name) return;
+  await setSetting(`${name}.enabled`, enabled ? "true" : "false");
+  revalidatePath("/settings");
+}
+
+export async function saveIntegrationToken(formData: FormData) {
+  const name = String(formData.get("name") ?? "");
+  const token = String(formData.get("token") ?? "").trim();
+  if (!name) return;
+  await setSetting(`${name}.token`, token);
+  revalidatePath("/settings");
+}
+
+export interface SevdeskSyncResult {
+  error?: string;
+  accounts?: number;
+  imported?: number;
+  categorized?: number;
+  lastSync?: string;
+}
+
+export async function syncSevdesk(): Promise<SevdeskSyncResult> {
+  const token = await getSevdeskToken();
+  if (!token) return { error: "Kein sevDesk-Token hinterlegt (Einstellungen oder SEVDESK_API_TOKEN)." };
+
+  let sevAccounts;
+  try {
+    sevAccounts = await fetchCheckAccounts(token);
+  } catch (e) {
+    return { error: `Verbindung zu sevDesk fehlgeschlagen: ${(e as Error).message}` };
+  }
+
+  const rules = await prisma.rule.findMany({ where: { active: true } });
+  let imported = 0;
+  let categorized = 0;
+
+  for (const sev of sevAccounts) {
+    let txs;
+    try {
+      txs = await fetchTransactions(token, sev.id);
+    } catch (e) {
+      return { error: `Umsätze für Konto ${sev.name} fehlgeschlagen: ${(e as Error).message}` };
+    }
+
+    // Konto zuordnen/anlegen. Neue Konten: Stichtag = frühestes Umsatzdatum.
+    let account = await prisma.account.findFirst({
+      where: { externalId: sev.id, source: "sevdesk" },
+    });
+    if (!account) {
+      const earliest = txs.reduce<Date | null>(
+        (min, t) => (!min || t.date < min ? t.date : min),
+        null,
+      );
+      account = await prisma.account.create({
+        data: {
+          name: sev.name,
+          iban: sev.iban,
+          externalId: sev.id,
+          source: "sevdesk",
+          openingBalance: 0,
+          openingDate: earliest ?? new Date(),
+        },
+      });
+    }
+
+    const data = txs.map((t) => {
+      const tx = {
+        bookingDate: t.date,
+        valueDate: t.date,
+        amount: t.amountCents,
+        counterparty: t.counterparty,
+        purpose: t.purpose,
+      };
+      const categoryId = categorize(tx, rules);
+      if (categoryId) categorized++;
+      return {
+        accountId: account!.id,
+        ...tx,
+        categoryId,
+        importHash: `sevdesk-${t.externalId}`,
+        raw: "sevDesk-Sync",
+      };
+    });
+
+    const res = await prisma.transaction.createMany({ data, skipDuplicates: true });
+    imported += res.count;
+  }
+
+  const now = new Date().toISOString();
+  await setSetting("sevdesk.lastSync", now);
+  revalidatePath("/settings");
+  revalidatePath("/");
+  revalidatePath("/transactions");
+  revalidatePath("/accounts");
+  return { accounts: sevAccounts.length, imported, categorized, lastSync: now };
+}

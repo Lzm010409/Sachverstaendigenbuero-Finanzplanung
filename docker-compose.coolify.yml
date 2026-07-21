@@ -1,0 +1,47 @@
+# Coolify-Deployment (Docker Compose).
+# Nutzt Coolifys "Magic"-Umgebungsvariablen:
+#   SERVICE_FQDN_APP_3000     -> Coolify vergibt automatisch eine Domain + SSL für App-Port 3000
+#   SERVICE_PASSWORD_POSTGRES -> generiertes DB-Passwort (in app + db identisch eingesetzt)
+#   SERVICE_PASSWORD_APPLOGIN -> generiertes Login-Passwort der App
+#   SERVICE_BASE64_64_AUTHSECRET -> generiertes Cookie-Signaturgeheimnis
+# Für lokalen Betrieb bitte weiterhin docker-compose.yml verwenden.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - SERVICE_FQDN_APP_3000
+      - DATABASE_URL=postgresql://liqui:${SERVICE_PASSWORD_POSTGRES}@db:5432/liqui?schema=public
+      - APP_PASSWORD=${SERVICE_PASSWORD_APPLOGIN}
+      - AUTH_SECRET=${SERVICE_BASE64_64_AUTHSECRET}
+      - NODE_ENV=production
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=liqui
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=liqui
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liqui -d liqui"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:

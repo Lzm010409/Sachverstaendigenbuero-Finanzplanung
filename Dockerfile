@@ -36,5 +36,6 @@ USER nextjs
 EXPOSE 3000
 ENV PORT=3000 HOSTNAME=0.0.0.0
 
-# Migrationen anwenden, dann Server starten
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && node server.js"]
+# Migrationen anwenden, optional Demo-Daten seeden (SEED_DEMO=true, idempotent),
+# dann Server starten.
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && { [ \"$SEED_DEMO\" = \"true\" ] && node node_modules/tsx/dist/cli.mjs prisma/seed-demo.ts || true; } && node server.js"]

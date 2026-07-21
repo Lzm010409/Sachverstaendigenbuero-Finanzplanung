@@ -24,10 +24,11 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Prisma für Migrationen zur Laufzeit
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+# Vollständige node_modules über die minimalen aus dem Standalone-Output legen.
+# Nötig, damit die Prisma-CLI beim `migrate deploy` zur Laufzeit ALLE transitiven
+# Abhängigkeiten findet (z.B. effect via @prisma/config), die der getracte
+# Standalone-Output nicht enthält.
+COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/package.json ./package.json
 

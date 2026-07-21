@@ -42,10 +42,31 @@ enum OpenItemKind {
 }
 
 // Einfacher Schlüssel-Wert-Speicher für App-Einstellungen (Integrationen etc.).
+// Hier werden u.a. Integrations-Zugangsdaten (Token/Domain) abgelegt.
 model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+enum ContactType {
+  PERSON
+  ORG
+}
+
+// Aus Pipedrive synchronisierter Kontakt (Person oder Organisation).
+model Contact {
+  id         String      @id @default(cuid())
+  source     String      @default("pipedrive")
+  externalId String
+  type       ContactType
+  name       String
+  email      String?
+  orgName    String?
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([source, externalId])
+  @@index([name])
 }
 
 model Account {

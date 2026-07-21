@@ -2,8 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { getSevdeskToken, setSetting } from "@/lib/settings";
+import {
+  getPipedriveDomain,
+  getPipedriveToken,
+  getSevdeskToken,
+  setSetting,
+} from "@/lib/settings";
 import { fetchAccountBalanceCents, fetchCheckAccounts, fetchTransactions } from "@/lib/sevdesk";
+import { fetchOrganizations, fetchPersons } from "@/lib/pipedrive";
 import { importHash } from "@/lib/import/hash";
 import { categorize } from "@/lib/categorize";
 
@@ -20,6 +26,14 @@ export async function saveIntegrationToken(formData: FormData) {
   const token = String(formData.get("token") ?? "").trim();
   if (!name) return;
   await setSetting(`${name}.token`, token);
+  revalidatePath("/settings");
+}
+
+export async function savePipedriveConfig(formData: FormData) {
+  const token = String(formData.get("token") ?? "").trim();
+  const domain = String(formData.get("domain") ?? "").trim();
+  if (token) await setSetting("pipedrive.token", token);
+  if (domain) await setSetting("pipedrive.domain", domain);
   revalidatePath("/settings");
 }
 
@@ -124,4 +138,54 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
   revalidatePath("/transactions");
   revalidatePath("/accounts");
   return { accounts: sevAccounts.length, imported, categorized, reconciled, lastSync: now };
+}
+
+export interface PipedriveSyncResult {
+  error?: string;
+  persons?: number;
+  organizations?: number;
+  total?: number;
+  lastSync?: string;
+}
+
+export async function syncPipedrive(): Promise<PipedriveSyncResult> {
+  const token = await getPipedriveToken();
+  const domain = await getPipedriveDomain();
+  if (!token || !domain) {
+    return { error: "Pipedrive-Token oder -Domain fehlt (Einstellungen oder Umgebungsvariablen)." };
+  }
+
+  let persons, organizations;
+  try {
+    persons = await fetchPersons(token, domain);
+    organizations = await fetchOrganizations(token, domain);
+  } catch (e) {
+    return { error: `Verbindung zu Pipedrive fehlgeschlagen: ${(e as Error).message}` };
+  }
+
+  for (const c of [...persons, ...organizations]) {
+    await prisma.contact.upsert({
+      where: { source_externalId: { source: "pipedrive", externalId: c.externalId } },
+      create: {
+        source: "pipedrive",
+        externalId: c.externalId,
+        type: c.type,
+        name: c.name,
+        email: c.email,
+        orgName: c.orgName,
+      },
+      update: { type: c.type, name: c.name, email: c.email, orgName: c.orgName },
+    });
+  }
+
+  const now = new Date().toISOString();
+  await setSetting("pipedrive.lastSync", now);
+  revalidatePath("/settings");
+  revalidatePath("/contacts");
+  return {
+    persons: persons.length,
+    organizations: organizations.length,
+    total: persons.length + organizations.length,
+    lastSync: now,
+  };
 }

@@ -1,6 +1,8 @@
 import { getSettings } from "@/lib/settings";
-import { toggleIntegration, saveIntegrationToken } from "@/app/actions/settings";
+import { prisma } from "@/lib/db";
+import { toggleIntegration, saveIntegrationToken, savePipedriveConfig } from "@/app/actions/settings";
 import { SevdeskSync } from "./sevdesk-sync";
+import { PipedriveSync } from "./pipedrive-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -30,12 +32,16 @@ export default async function SettingsPage() {
     "sevdesk.lastSync",
     "pipedrive.enabled",
     "pipedrive.token",
+    "pipedrive.domain",
+    "pipedrive.lastSync",
   ]);
   const sevEnabled = s["sevdesk.enabled"] === "true";
   const sevTokenFromEnv = !!process.env.SEVDESK_API_TOKEN && !s["sevdesk.token"];
   const sevTokenSet = !!s["sevdesk.token"] || !!process.env.SEVDESK_API_TOKEN;
   const pipeEnabled = s["pipedrive.enabled"] === "true";
   const pipeTokenSet = !!s["pipedrive.token"] || !!process.env.PIPEDRIVE_API_TOKEN;
+  const pipeDomainSet = !!s["pipedrive.domain"] || !!process.env.PIPEDRIVE_COMPANY_DOMAIN;
+  const contactCount = await prisma.contact.count();
 
   return (
     <div className="space-y-6">
@@ -96,14 +102,44 @@ export default async function SettingsPage() {
           <div>
             <h2 className="text-base font-semibold text-slate-800">Pipedrive</h2>
             <p className="text-sm text-slate-500">
-              Kontakte aus Pipedrive für die Zuordnung von Gegenparteien (in Vorbereitung).
+              Kontakte (Personen &amp; Organisationen) aus Pipedrive synchronisieren.
             </p>
           </div>
           <Toggle name="pipedrive" enabled={pipeEnabled} />
         </div>
+
         <div className="text-xs text-slate-500">
           Token: {pipeTokenSet ? <span className="text-emerald-600">verfügbar</span> : <span className="text-amber-600">nicht gesetzt</span>}
+          {" · "}Domain: {pipeDomainSet ? <span className="text-emerald-600">verfügbar</span> : <span className="text-amber-600">nicht gesetzt</span>}
+          {" · "}Kontakte: <strong>{contactCount}</strong>
         </div>
+
+        <form action={savePipedriveConfig} className="flex flex-wrap items-end gap-2">
+          <div className="min-w-[200px] flex-1">
+            <label className="label">API-Token (in DB gespeichert)</label>
+            <input name="token" type="password" className="input" placeholder="Pipedrive API-Token" />
+          </div>
+          <div className="min-w-[160px]">
+            <label className="label">Firmen-Domain</label>
+            <input name="domain" className="input" placeholder="z.B. meinefirma" />
+          </div>
+          <button className="btn-secondary" type="submit">
+            Speichern
+          </button>
+        </form>
+
+        {pipeEnabled ? (
+          <div className="border-t border-slate-100 pt-4">
+            <PipedriveSync />
+            {s["pipedrive.lastSync"] && (
+              <p className="mt-2 text-xs text-slate-400">
+                Letzte Synchronisierung: {new Date(s["pipedrive.lastSync"]).toLocaleString("de-DE")}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400">Aktiviere die Integration, um zu synchronisieren.</p>
+        )}
       </div>
     </div>
   );

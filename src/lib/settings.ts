@@ -32,6 +32,10 @@ export async function getPipedriveToken(): Promise<string | null> {
   return (await getSetting("pipedrive.token")) || process.env.PIPEDRIVE_API_TOKEN || null;
 }
 
+export async function getPipedriveDomain(): Promise<string | null> {
+  return (await getSetting("pipedrive.domain")) || process.env.PIPEDRIVE_COMPANY_DOMAIN || null;
+}
+
 export const INTEGRATIONS = {
   sevdesk: "sevdesk",
   pipedrive: "pipedrive",

@@ -206,7 +206,10 @@ export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[
     const grossCents = Math.round(Math.abs(amount) * 100);
     const paid = paidCents(o, amount);
     if (grossCents - paid <= SETTLED_TOLERANCE_CENTS) continue; // (nahezu) vollständig bezahlt
-    const isIncome = String(o.creditDebit ?? "D").toUpperCase() === "C";
+    // sevDesk-Konvention: creditDebit "C" = Credit = Ausgabe (Verbindlichkeit),
+    // "D" = Debit = Einnahme (Forderung). Standard für einen Beleg ist die
+    // Ausgabe. Siehe API-Doku: "credit (expense) or debit (revenue) document".
+    const isIncome = String(o.creditDebit ?? "C").toUpperCase() === "D";
     const date = firstDate(o, ["voucherDate", "createDate"]) ?? startOfDayUTC(new Date());
     // Fälligkeit = paymentDeadline (Zahlungsziel des Belegs). `payDate` ist das
     // tatsächliche Zahldatum – für offene Belege irreführend.
@@ -215,7 +218,7 @@ export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[
       externalId: String(o.id),
       source: "sevdesk-voucher",
       kind: isIncome ? "RECEIVABLE" : "PAYABLE",
-      counterparty: firstStr(o, ["supplier", "supplierName", "description", "creditDebit"]) || "Beleg",
+      counterparty: firstStr(o, ["supplier", "supplierName", "description"]) || "Beleg",
       reference: firstStr(o, ["voucherNumber", "description"]) || null,
       amountCents: grossCents,
       paidAmountCents: paid,
@@ -223,6 +226,79 @@ export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[
     });
   }
   return out;
+}
+
+export interface VoucherClassification {
+  total: number;
+  byCreditDebit: Record<string, number>;
+  byVoucherType: Record<string, number>;
+  byStatus: Record<string, number>;
+  // Kreuztabelle creditDebit -> Anzahl, aufgeteilt nach Netto-Vorzeichen.
+  byCreditDebitAndSign: Record<string, { positive: number; negative: number; zero: number }>;
+  // Kleine Stichprobe zur manuellen Zuordnung (enthält Lieferantennamen –
+  // nur für die Diagnose im eigenen System gedacht, nicht für das HTTP-JSON).
+  samples: {
+    reference: string;
+    creditDebit: string;
+    voucherType: string;
+    status: number;
+    grossCents: number;
+    netCents: number;
+    supplier: string;
+  }[];
+}
+
+/**
+ * Diagnose: aggregiert, wie Belege (Vouchers) in sevDesk klassifiziert sind,
+ * damit die Zuordnung Forderung/Verbindlichkeit aus Echtdaten abgeleitet werden
+ * kann (statt geraten). Liefert Verteilungen + eine kleine Stichprobe.
+ */
+export async function fetchVoucherClassification(
+  token: string,
+  sampleSize = 12,
+): Promise<VoucherClassification> {
+  const objs = await sevGet(`/Voucher?limit=1000`, token);
+  const byCreditDebit: Record<string, number> = {};
+  const byVoucherType: Record<string, number> = {};
+  const byStatus: Record<string, number> = {};
+  const byCreditDebitAndSign: Record<string, { positive: number; negative: number; zero: number }> = {};
+  const samples: VoucherClassification["samples"] = [];
+
+  for (const o of objs) {
+    const cd = String(o.creditDebit ?? "?").toUpperCase();
+    const vt = String(o.voucherType ?? "?");
+    const st = String(o.status ?? "?");
+    byCreditDebit[cd] = (byCreditDebit[cd] ?? 0) + 1;
+    byVoucherType[vt] = (byVoucherType[vt] ?? 0) + 1;
+    byStatus[st] = (byStatus[st] ?? 0) + 1;
+
+    const net = toNumberOrNull(o.sumNet) ?? 0;
+    const bucket = (byCreditDebitAndSign[cd] ??= { positive: 0, negative: 0, zero: 0 });
+    if (net > 0) bucket.positive++;
+    else if (net < 0) bucket.negative++;
+    else bucket.zero++;
+
+    if (samples.length < sampleSize) {
+      samples.push({
+        reference: firstStr(o, ["voucherNumber", "description"]).slice(0, 40),
+        creditDebit: cd,
+        voucherType: vt,
+        status: Number(o.status ?? 0),
+        grossCents: Math.round((toNumberOrNull(o.sumGross) ?? 0) * 100),
+        netCents: Math.round(net * 100),
+        supplier: firstStr(o, ["supplierName", "supplier"]).slice(0, 40),
+      });
+    }
+  }
+
+  return {
+    total: objs.length,
+    byCreditDebit,
+    byVoucherType,
+    byStatus,
+    byCreditDebitAndSign,
+    samples,
+  };
 }
 
 function addDaysLocal(d: Date, days: number): Date {

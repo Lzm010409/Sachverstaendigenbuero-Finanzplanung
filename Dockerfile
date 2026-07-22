@@ -31,6 +31,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/package.json ./package.json
+# Quellcode + tsconfig für CLI-Tools (z.B. Selbsttest via tsx, das die
+# @/-Pfad-Aliase über die tsconfig auflöst).
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/scripts ./scripts
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 
 USER nextjs
 EXPOSE 3000
@@ -38,4 +43,4 @@ ENV PORT=3000 HOSTNAME=0.0.0.0
 
 # Migrationen anwenden, optional Demo-Daten seeden (SEED_DEMO=true, idempotent),
 # dann Server starten.
-CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && { [ \"$SEED_DEMO\" = \"true\" ] && node node_modules/tsx/dist/cli.mjs prisma/seed-demo.ts || true; } && node server.js"]
+CMD ["sh", "-c", "node node_modules/prisma/build/index.js migrate deploy && { [ \"$SEED_DEMO\" = \"true\" ] && node node_modules/tsx/dist/cli.mjs prisma/seed-demo.ts || true; } && { [ -n \"$SELFTEST\" ] && node node_modules/tsx/dist/cli.mjs scripts/selftest.ts || true; } && node server.js"]

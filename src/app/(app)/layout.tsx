@@ -17,6 +17,7 @@ const NAV = [
   { href: "/accounts", label: "Konten", icon: "🏦" },
   { href: "/contacts", label: "Kontakte", icon: "👥" },
   { href: "/settings", label: "Einstellungen", icon: "⚙️" },
+  { href: "/diagnostics", label: "Selbsttest", icon: "🩺" },
 ];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {

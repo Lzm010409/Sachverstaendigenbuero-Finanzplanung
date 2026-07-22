@@ -74,4 +74,15 @@ describe("sevDesk offene Posten", () => {
     expect(items[0].externalId).toBe("11");
     expect(isoDate(items[0].dueDate)).toBe("2026-02-15");
   });
+
+  it("Beleg: creditDebit C = Ausgabe → Verbindlichkeit, D = Einnahme → Forderung", async () => {
+    mockSevObjects([
+      { id: "20", status: "100", sumGross: "119.00", paidAmount: 0, voucherDate: "2026-01-01T00:00:00+01:00", creditDebit: "C", paymentDeadline: "2026-01-31T00:00:00+01:00" },
+      { id: "21", status: "100", sumGross: "500.00", paidAmount: 0, voucherDate: "2026-01-01T00:00:00+01:00", creditDebit: "D", paymentDeadline: "2026-01-31T00:00:00+01:00" },
+    ]);
+    const items = await fetchOpenVouchers("t");
+    const byId = Object.fromEntries(items.map((i) => [i.externalId, i.kind]));
+    expect(byId["20"]).toBe("PAYABLE");
+    expect(byId["21"]).toBe("RECEIVABLE");
+  });
 });

@@ -12,6 +12,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "seed": "tsx prisma/seed.ts",
+    "selftest": "tsx scripts/selftest.ts",
     "test": "vitest run"
   },
   "dependencies": {

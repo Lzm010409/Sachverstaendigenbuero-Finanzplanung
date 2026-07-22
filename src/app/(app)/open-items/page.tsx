@@ -5,12 +5,10 @@ import { formatCents } from "@/lib/money";
 import { todayUTC } from "@/lib/dates";
 import { deleteOpenItem, setOpenItemPayment, toggleOpenItemPaid } from "@/app/actions/openitems";
 import { OpenItemForm } from "./open-item-form";
-import { Pagination } from "@/components/pagination";
+import { Pagination, clampPageSize } from "@/components/pagination";
 import { PageAlerts } from "@/components/page-alerts";
 
 export const dynamic = "force-dynamic";
-
-const PAGE_SIZE = 50;
 
 function amountInput(cents: number): string {
   return (cents / 100).toFixed(2).replace(".", ",");
@@ -19,10 +17,11 @@ function amountInput(cents: number): string {
 export default async function OpenItemsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ kind?: string; status?: string; q?: string; page?: string }>;
+  searchParams: Promise<{ kind?: string; status?: string; q?: string; page?: string; size?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
+  const PAGE_SIZE = clampPageSize(sp.size);
   const today = todayUTC();
 
   // Filter -> Prisma-Where
@@ -69,7 +68,7 @@ export default async function OpenItemsPage({
   const payables = unpaid.filter((i) => i.kind === "PAYABLE").reduce((s, i) => s + openOf(i), 0);
   const overdueCount = unpaid.filter((i) => new Date(i.dueDate) < today).length;
 
-  const filterParams = { kind: sp.kind, status: sp.status, q: sp.q };
+  const filterParams = { kind: sp.kind, status: sp.status, q: sp.q, size: PAGE_SIZE !== 50 ? String(PAGE_SIZE) : undefined };
 
   // KPI-Karten sind Drilldowns: sie setzen den passenden Tabellenfilter.
   const kpi = (href: string, active: boolean, label: string, value: string, tone: string) => (
@@ -102,7 +101,7 @@ export default async function OpenItemsPage({
 
       <div className="card">
         <h2 className="mb-4 text-sm font-semibold text-slate-700">Neuer Posten</h2>
-        <OpenItemForm categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
+        <OpenItemForm categories={categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} />
       </div>
 
       <div className="card">

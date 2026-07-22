@@ -31,7 +31,7 @@ export default async function PlanningPage() {
 
       <div className="card">
         <h2 className="mb-4 text-sm font-semibold text-slate-700">Neuer Planposten</h2>
-        <PlannedForm categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
+        <PlannedForm categories={categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} />
       </div>
 
       <div className="card">

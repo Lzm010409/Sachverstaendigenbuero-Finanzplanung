@@ -2,8 +2,9 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { createOpenItem } from "@/app/actions/openitems";
+import { CategoryOptions, type CatOpt } from "@/components/category-select";
 
-export function OpenItemForm({ categories }: { categories: { id: string; name: string }[] }) {
+export function OpenItemForm({ categories }: { categories: CatOpt[] }) {
   const ref = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => createOpenItem(fd),
@@ -46,11 +47,7 @@ export function OpenItemForm({ categories }: { categories: { id: string; name: s
         <label className="label">Kategorie (optional)</label>
         <select name="categoryId" className="input" defaultValue="">
           <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
+          <CategoryOptions categories={categories} />
         </select>
       </div>
       {state?.error && (

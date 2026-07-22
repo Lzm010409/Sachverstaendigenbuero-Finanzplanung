@@ -12,6 +12,23 @@ export async function setTransactionCategory(formData: FormData) {
     data: { categoryId: categoryId || null },
   });
   revalidatePath("/transactions");
+  revalidatePath("/");
+}
+
+/** Ordnet mehrere Umsätze auf einmal einer Kategorie zu (Multiselect). */
+export async function bulkSetTransactionCategory(
+  ids: string[],
+  categoryId: string | null,
+): Promise<{ updated: number }> {
+  const clean = ids.filter(Boolean);
+  if (clean.length === 0) return { updated: 0 };
+  const res = await prisma.transaction.updateMany({
+    where: { id: { in: clean } },
+    data: { categoryId: categoryId || null },
+  });
+  revalidatePath("/transactions");
+  revalidatePath("/");
+  return { updated: res.count };
 }
 
 export async function deleteTransaction(formData: FormData) {

@@ -2,8 +2,9 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { createPlannedItem } from "@/app/actions/planning";
+import { CategoryOptions, type CatOpt } from "@/components/category-select";
 
-export function PlannedForm({ categories }: { categories: { id: string; name: string }[] }) {
+export function PlannedForm({ categories }: { categories: CatOpt[] }) {
   const ref = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => createPlannedItem(fd),
@@ -56,11 +57,7 @@ export function PlannedForm({ categories }: { categories: { id: string; name: st
         <label className="label">Kategorie (optional)</label>
         <select name="categoryId" className="input" defaultValue="">
           <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
+          <CategoryOptions categories={categories} />
         </select>
       </div>
       {state?.error && <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">{state.error}</p>}

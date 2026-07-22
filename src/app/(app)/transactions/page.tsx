@@ -2,22 +2,21 @@ import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/money";
-import { deleteTransaction } from "@/app/actions/transactions";
-import { TxCategorySelect } from "./tx-category-select";
-import { Pagination } from "@/components/pagination";
+import { Pagination, clampPageSize } from "@/components/pagination";
 import { PageAlerts } from "@/components/page-alerts";
+import { TransactionsTable, type TxRow } from "./transactions-table";
+import type { CatOpt } from "@/components/category-select";
 
 export const dynamic = "force-dynamic";
-
-const PAGE_SIZE = 50;
 
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string; state?: string; page?: string; q?: string }>;
+  searchParams: Promise<{ account?: string; state?: string; page?: string; q?: string; size?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
+  const pageSize = clampPageSize(sp.size);
   // Umsätze archivierter Konten werden nicht mehr gelistet (sie zählen ohnehin
   // nicht in die Berechnungen). Endgültig entfernen: Konten-Seite.
   const where: Prisma.TransactionWhereInput = { account: { archived: false } };
@@ -34,17 +33,27 @@ export default async function TransactionsPage({
     prisma.transaction.findMany({
       where,
       orderBy: { bookingDate: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       include: { account: true, category: true },
     }),
     prisma.transaction.count({ where }),
     prisma.account.findMany({ where: { archived: false }, orderBy: { name: "asc" } }),
-    prisma.category.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
+    prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
   ]);
 
-  const pages = Math.ceil(totalCount / PAGE_SIZE);
-  const catOptions = categories.map((c) => ({ id: c.id, name: c.name }));
+  const pages = Math.ceil(totalCount / pageSize);
+  const catOptions: CatOpt[] = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  const rows: TxRow[] = transactions.map((t) => ({
+    id: t.id,
+    dateLabel: new Date(t.bookingDate).toLocaleDateString("de-DE"),
+    counterparty: t.counterparty,
+    purpose: t.purpose,
+    accountName: t.account.name,
+    categoryId: t.categoryId,
+    amountLabel: formatCents(t.amount),
+    negative: t.amount < 0,
+  }));
 
   return (
     <div className="space-y-6">
@@ -93,57 +102,16 @@ export default async function TransactionsPage({
             .
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="th">Datum</th>
-                  <th className="th">Gegenpartei / Zweck</th>
-                  <th className="th">Konto</th>
-                  <th className="th">Kategorie</th>
-                  <th className="th text-right">Betrag</th>
-                  <th className="th"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-50 align-top">
-                    <td className="td whitespace-nowrap">
-                      {new Date(t.bookingDate).toLocaleDateString("de-DE")}
-                    </td>
-                    <td className="td max-w-sm">
-                      <div className="font-medium text-slate-800">{t.counterparty || "—"}</div>
-                      <div className="truncate text-xs text-slate-400">{t.purpose}</div>
-                    </td>
-                    <td className="td whitespace-nowrap text-xs text-slate-500">{t.account.name}</td>
-                    <td className="td">
-                      <TxCategorySelect txId={t.id} current={t.categoryId} categories={catOptions} />
-                    </td>
-                    <td
-                      className={`td whitespace-nowrap text-right font-semibold ${t.amount < 0 ? "text-red-600" : "text-emerald-600"}`}
-                    >
-                      {formatCents(t.amount)}
-                    </td>
-                    <td className="td text-right">
-                      <form action={deleteTransaction}>
-                        <input type="hidden" name="id" value={t.id} />
-                        <button className="text-xs text-slate-300 hover:text-red-600">×</button>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <TransactionsTable transactions={rows} categories={catOptions} />
         )}
 
         <Pagination
           page={page}
           totalPages={pages}
           totalItems={totalCount}
-          pageSize={PAGE_SIZE}
+          pageSize={pageSize}
           basePath="/transactions"
-          params={{ account: sp.account, state: sp.state, q: sp.q }}
+          params={{ account: sp.account, state: sp.state, q: sp.q, size: pageSize !== 50 ? String(pageSize) : undefined }}
         />
       </div>
     </div>

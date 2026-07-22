@@ -1,18 +1,17 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { Pagination } from "@/components/pagination";
+import { Pagination, clampPageSize } from "@/components/pagination";
 
 export const dynamic = "force-dynamic";
-
-const PAGE_SIZE = 50;
 
 export default async function ContactsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; size?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
+  const PAGE_SIZE = clampPageSize(sp.size);
   const where: Prisma.ContactWhereInput = sp.q
     ? {
         OR: [
@@ -95,7 +94,7 @@ export default async function ContactsPage({
               totalItems={matchCount}
               pageSize={PAGE_SIZE}
               basePath="/contacts"
-              params={{ q: sp.q }}
+              params={{ q: sp.q, size: PAGE_SIZE !== 50 ? String(PAGE_SIZE) : undefined }}
             />
           </>
         )}

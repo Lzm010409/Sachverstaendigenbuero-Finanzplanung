@@ -7,11 +7,9 @@ import { occurrencesBetween } from "@/lib/recurrence";
 import { getAnomalyDetail } from "@/lib/anomalies";
 import { addMonths, isoDate, startOfDayUTC, todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
-import { Pagination } from "@/components/pagination";
+import { Pagination, clampPageSize } from "@/components/pagination";
 
 export const dynamic = "force-dynamic";
-
-const PAGE_SIZE = 50;
 
 type Metric =
   | "balance"
@@ -61,12 +59,15 @@ async function TransactionDrill({
   direction,
   page,
   metric,
+  pageSize,
 }: {
   title: string;
   direction: "in" | "out";
   page: number;
   metric: Metric;
+  pageSize: number;
 }) {
+  const PAGE_SIZE = pageSize;
   const today = todayUTC();
   const from = addMonths(today, -3);
   const where: Prisma.TransactionWhereInput = {
@@ -121,7 +122,7 @@ async function TransactionDrill({
             </tbody>
           </table>
         </div>
-        <Pagination page={page} totalPages={totalPages} totalItems={count} pageSize={PAGE_SIZE} basePath="/drilldown" params={{ metric }} />
+        <Pagination page={page} totalPages={totalPages} totalItems={count} pageSize={PAGE_SIZE} basePath="/drilldown" params={{ metric, size: PAGE_SIZE !== 50 ? String(PAGE_SIZE) : undefined }} />
       </div>
     </div>
   );
@@ -417,11 +418,12 @@ async function AnomalyDrill({ dkey }: { dkey: string }) {
 export default async function DrilldownPage({
   searchParams,
 }: {
-  searchParams: Promise<{ metric?: string; page?: string; from?: string; to?: string; key?: string }>;
+  searchParams: Promise<{ metric?: string; page?: string; from?: string; to?: string; key?: string; size?: string }>;
 }) {
   const sp = await searchParams;
   const metric = (sp.metric ?? "balance") as Metric;
   const page = Math.max(1, Number(sp.page) || 1);
+  const pageSize = clampPageSize(sp.size);
 
   switch (metric) {
     case "range":
@@ -434,9 +436,9 @@ export default async function DrilldownPage({
 
   switch (metric) {
     case "income3m":
-      return <TransactionDrill title={TITLES.income3m} direction="in" page={page} metric={metric} />;
+      return <TransactionDrill title={TITLES.income3m} direction="in" page={page} metric={metric} pageSize={pageSize} />;
     case "expense3m":
-      return <TransactionDrill title={TITLES.expense3m} direction="out" page={page} metric={metric} />;
+      return <TransactionDrill title={TITLES.expense3m} direction="out" page={page} metric={metric} pageSize={pageSize} />;
     case "receivables":
       return <OpenItemDrill kind="RECEIVABLE" />;
     case "payables":

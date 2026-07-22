@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { CategoryOptions } from "@/components/category-select";
 import {
   deleteScenario,
   deleteScenarioAdjustment,
@@ -100,11 +101,7 @@ export default async function ScenariosPage() {
                       <option value="" disabled>
                         wählen…
                       </option>
-                      {categories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
+                      <CategoryOptions categories={categories} />
                     </select>
                   </div>
                   <div className="w-28">

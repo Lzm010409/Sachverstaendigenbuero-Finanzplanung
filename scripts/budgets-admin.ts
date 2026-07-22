@@ -160,7 +160,58 @@ async function recategorize(raw: string) {
   }
 }
 
+const PERIOD_TO_RECURRENCE: Record<Period, string> = {
+  WEEKLY: "WEEKLY",
+  MONTHLY: "MONTHLY",
+  QUARTERLY: "QUARTERLY",
+  YEARLY: "YEARLY",
+};
+
+// Wandelt Budgets in Wiederkehrer (PlannedItem) um: Betrag mit Vorzeichen,
+// Rhythmus, Kategorie und Zeitraum übernommen; das Budget wird danach gelöscht.
+async function convertToPlanned(raw: string) {
+  let input: { toPlanned?: { title: string; kind: Kind }[] };
+  try {
+    input = JSON.parse(raw);
+  } catch (e) {
+    console.error("BUDGETS_CONVERT ist kein gültiges JSON:", (e as Error).message);
+    return;
+  }
+  let converted = 0;
+  let missing = 0;
+  for (const it of input.toPlanned ?? []) {
+    const b = await prisma.budget.findFirst({ where: { title: it.title, kind: it.kind, deletedAt: null } });
+    if (!b) {
+      console.warn(`nicht gefunden (schon umgewandelt?): ${it.title}`);
+      missing++;
+      continue;
+    }
+    const amount = b.kind === "EXPENSE" ? -Math.abs(b.amount) : Math.abs(b.amount);
+    await prisma.plannedItem.create({
+      data: {
+        name: b.title,
+        amount,
+        recurrence: (PERIOD_TO_RECURRENCE[b.period as Period] ?? "MONTHLY") as never,
+        interval: 1,
+        startDate: b.startDate ?? new Date(),
+        endDate: b.endDate,
+        categoryId: b.categoryId,
+        active: true,
+        note: "aus Budget übernommen",
+      },
+    });
+    await prisma.budget.delete({ where: { id: b.id } });
+    converted++;
+    console.log(`umgewandelt -> Wiederkehrer: [${b.kind}] ${b.title} (${(amount / 100).toFixed(2)} €/${b.period})`);
+  }
+  console.log(`\nUmwandlung fertig: ${converted} umgewandelt, ${missing} nicht gefunden.\n`);
+}
+
 async function main() {
+  const convB64 = process.env.BUDGETS_CONVERT_B64;
+  if (convB64 && convB64.trim()) {
+    await convertToPlanned(Buffer.from(convB64.trim(), "base64").toString("utf8"));
+  }
   const recatB64 = process.env.BUDGETS_RECAT_B64;
   if (recatB64 && recatB64.trim()) {
     await recategorize(Buffer.from(recatB64.trim(), "base64").toString("utf8"));

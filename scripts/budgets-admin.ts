@@ -119,7 +119,13 @@ async function importBudgets(raw: string) {
 }
 
 async function main() {
-  const raw = process.env.BUDGETS_IMPORT;
+  // Import-JSON entweder direkt (BUDGETS_IMPORT) oder base64-kodiert
+  // (BUDGETS_IMPORT_B64, umgeht Quoting-Probleme beim Env-Transport).
+  let raw = process.env.BUDGETS_IMPORT;
+  const b64 = process.env.BUDGETS_IMPORT_B64;
+  if ((!raw || !raw.trim()) && b64 && b64.trim()) {
+    raw = Buffer.from(b64.trim(), "base64").toString("utf8");
+  }
   if (raw && raw.trim().length > 0) {
     await importBudgets(raw);
   }

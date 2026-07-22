@@ -208,7 +208,9 @@ export default async function DashboardPage() {
                   key={m.key}
                   className={`whitespace-nowrap px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide ${m.isCurrent ? "bg-brand/10 text-brand-fg" : "text-slate-500"}`}
                 >
-                  {m.label}
+                  <Link href={`/drilldown?metric=range&from=${m.startISO}&to=${m.endISO}`} className="hover:text-brand hover:underline" title="Bewegungen anzeigen">
+                    {m.label}
+                  </Link>
                 </th>
               ))}
             </tr>

@@ -3,6 +3,29 @@ import { buildForecast } from "../forecast";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
+describe("buildForecast Invarianten", () => {
+  it("Endsaldo = Start + Zuflüsse − Abflüsse; jeder Tag = Vortag + Zu − Ab", () => {
+    const res = buildForecast({
+      startBalanceCents: 1_000_000,
+      today: d("2026-03-01"),
+      horizonDays: 120,
+      plannedItems: [
+        { amount: 250000, recurrence: "MONTHLY", interval: 1, startDate: d("2026-03-05") },
+        { amount: -80000, recurrence: "WEEKLY", interval: 1, startDate: d("2026-03-02") },
+      ],
+      oneOffs: [
+        { date: d("2026-03-10"), amount: 500000 },
+        { date: d("2026-04-15"), amount: -300000 },
+      ],
+    });
+    const start = res.points[0].balance - res.points[0].inflow + res.points[0].outflow;
+    expect(start + res.totalInflow - res.totalOutflow).toBe(res.endBalance);
+    for (let i = 1; i < res.points.length; i++) {
+      expect(res.points[i - 1].balance + res.points[i].inflow - res.points[i].outflow).toBe(res.points[i].balance);
+    }
+  });
+});
+
 describe("buildForecast", () => {
   it("projiziert Saldo mit einer monatlichen Ausgabe", () => {
     const res = buildForecast({

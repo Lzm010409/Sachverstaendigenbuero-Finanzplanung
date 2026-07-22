@@ -301,6 +301,62 @@ export async function fetchVoucherClassification(
   };
 }
 
+export interface VatEntries {
+  outputByMonth: Record<string, number>; // USt aus Rechnungen (Cent) je "YYYY-MM"
+  inputByMonth: Record<string, number>; // Vorsteuer aus Belegen (Cent) je "YYYY-MM"
+  invoiceCount: number;
+  voucherCount: number;
+}
+
+function ym(dateStr: unknown): string | null {
+  const m = /^(\d{4})-(\d{2})/.exec(String(dateStr ?? ""));
+  return m ? `${m[1]}-${m[2]}` : null;
+}
+
+/**
+ * USt-/Vorsteuer-Beträge aus sevDesk – ausschließlich Belege/Rechnungen in EUR
+ * mit ausgewiesener Steuer (sumTax > 0). Rechnungen = USt (Ausgang), Belege mit
+ * creditDebit "C" (Ausgabe) = Vorsteuer (Eingang), "D" (Einnahme) = USt.
+ */
+export async function fetchVatEntries(token: string): Promise<VatEntries> {
+  const [invoices, vouchers] = await Promise.all([
+    sevGet(`/Invoice?limit=1000`, token),
+    sevGet(`/Voucher?limit=1000`, token),
+  ]);
+  const outputByMonth: Record<string, number> = {};
+  const inputByMonth: Record<string, number> = {};
+  const add = (bucket: Record<string, number>, key: string, cents: number) => {
+    bucket[key] = (bucket[key] ?? 0) + cents;
+  };
+
+  let invoiceCount = 0;
+  for (const o of invoices) {
+    if (String(o.currency ?? "EUR") !== "EUR") continue; // nur EUR
+    if (Number(o.status ?? 0) < 200) continue; // keine Entwürfe
+    const tax = toNumberOrNull(o.sumTax);
+    if (tax == null || tax <= 0) continue; // nur mit MwSt > 0
+    const key = ym(o.invoiceDate) ?? ym(o.deliveryDate);
+    if (!key) continue;
+    add(outputByMonth, key, Math.round(tax * 100));
+    invoiceCount++;
+  }
+
+  let voucherCount = 0;
+  for (const o of vouchers) {
+    if (String(o.currency ?? "EUR") !== "EUR") continue;
+    if (Number(o.status ?? 0) < 100) continue; // keine Entwürfe
+    const tax = toNumberOrNull(o.sumTax);
+    if (tax == null || tax <= 0) continue;
+    const key = ym(o.voucherDate);
+    if (!key) continue;
+    const isRevenue = String(o.creditDebit ?? "C").toUpperCase() === "D";
+    add(isRevenue ? outputByMonth : inputByMonth, key, Math.round(tax * 100));
+    voucherCount++;
+  }
+
+  return { outputByMonth, inputByMonth, invoiceCount, voucherCount };
+}
+
 function addDaysLocal(d: Date, days: number): Date {
   const r = new Date(d);
   r.setUTCDate(r.getUTCDate() + (Number.isFinite(days) ? days : 0));

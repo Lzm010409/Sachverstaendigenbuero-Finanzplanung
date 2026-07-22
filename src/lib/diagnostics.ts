@@ -12,6 +12,8 @@ import {
   getTotalBalanceCents,
 } from "./queries";
 import { getCashflowMatrix, getCategoryBreakdown, getKpis } from "./analytics";
+import { getWeeklyForecast } from "./planning";
+import { formatCents } from "./money";
 import { getPipedriveToken, getSevdeskToken } from "./settings";
 import {
   fetchCheckAccounts,
@@ -214,17 +216,50 @@ async function engineRobustness(): Promise<CheckResult[]> {
       `${f.points.length} Punkte, ${bad} ungültig`, f.points.length));
   }
 
-  // Cashflow-Matrix: Liquiditäts-Walk muss konsistent sein.
+  // Forecast-Rekonziliation: Endsaldo = Startsaldo + Zuflüsse - Abflüsse; und
+  // jeder Tagespunkt = Vortag + Zufluss - Abfluss.
+  {
+    const f = await getForecast(120);
+    const start = f.points[0] ? f.points[0].balance - f.points[0].inflow + f.points[0].outflow : balance;
+    const reconEnd = start + f.totalInflow - f.totalOutflow;
+    let stepErr = 0;
+    for (let i = 1; i < f.points.length; i++) {
+      if (Math.abs((f.points[i - 1].balance + f.points[i].inflow - f.points[i].outflow) - f.points[i].balance) > 1) stepErr++;
+    }
+    const ok = Math.abs(reconEnd - f.endBalance) <= 1 && stepErr === 0;
+    out.push(check("eng.forecastRecon", "Forecast rekonziliert (Saldo = Start + Zu − Ab)", ok ? "pass" : "fail",
+      ok ? "schlüssig" : `Endabweichung ${formatCents(reconEnd - f.endBalance)}, ${stepErr} Tagesfehler`));
+  }
+
+  // Cashflow-Matrix: Liquiditäts-Walk + realisiert/geplant = Gesamt.
   const m = await getCashflowMatrix(6, 6);
   let walkErrors = 0;
+  let splitErrors = 0;
   for (const mo of m.months) {
     if (Math.abs(mo.startLiquidity + mo.net - mo.endLiquidity) > 1) walkErrors++;
+    if (Math.abs(mo.inflowRealized + mo.inflowPlanned - mo.inflow) > 1) splitErrors++;
+    if (Math.abs(mo.outflowRealized + mo.outflowPlanned - mo.outflow) > 1) splitErrors++;
   }
   for (let i = 0; i + 1 < m.months.length; i++) {
     if (Math.abs(m.months[i].endLiquidity - m.months[i + 1].startLiquidity) > 1) walkErrors++;
   }
   out.push(check("eng.cashflowWalk", "Liquiditäts-Walk konsistent", walkErrors === 0 ? "pass" : "fail",
     walkErrors === 0 ? `${m.months.length} Monate schlüssig` : `${walkErrors} Inkonsistenzen`, walkErrors));
+  out.push(check("eng.cashflowSplit", "Realisiert + geplant = Gesamt", splitErrors === 0 ? "pass" : "fail",
+    splitErrors === 0 ? "stimmig" : `${splitErrors} Abweichungen`, splitErrors));
+
+  // 13-Wochen-Vorschau: Start + Netto = Ende und lückenlose Verkettung.
+  {
+    const { weeks } = await getWeeklyForecast(13, undefined, 0);
+    let weekErr = 0;
+    for (const w of weeks) if (Math.abs(w.startLiquidity + w.net - w.endLiquidity) > 1) weekErr++;
+    for (let i = 0; i + 1 < weeks.length; i++) {
+      if (Math.abs(weeks[i].endLiquidity - weeks[i + 1].startLiquidity) > 1) weekErr++;
+    }
+    for (const w of weeks) if (Math.abs(w.inflowRealized + w.inflowPlanned - w.inflow) > 1) weekErr++;
+    out.push(check("eng.weeklyWalk", "13-Wochen-Walk konsistent (Start+Netto=Ende)", weekErr === 0 ? "pass" : "fail",
+      weekErr === 0 ? `${weeks.length} Wochen schlüssig` : `${weekErr} Inkonsistenzen`, weekErr));
+  }
 
   // KPIs: Working Capital muss aus Saldo + Forderungen - Verbindlichkeiten folgen.
   const k = await getKpis();

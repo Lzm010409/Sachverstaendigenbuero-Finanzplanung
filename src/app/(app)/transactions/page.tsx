@@ -17,7 +17,9 @@ export default async function TransactionsPage({
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
-  const where: Prisma.TransactionWhereInput = {};
+  // Umsätze archivierter Konten werden nicht mehr gelistet (sie zählen ohnehin
+  // nicht in die Berechnungen). Endgültig entfernen: Konten-Seite.
+  const where: Prisma.TransactionWhereInput = { account: { archived: false } };
   if (sp.account) where.accountId = sp.account;
   if (sp.state === "uncategorized") where.categoryId = null;
   if (sp.q) {

@@ -20,6 +20,7 @@ export default async function ForecastPage({
   const { weeks: buckets } = await getWeeklyForecast(weeks, sp.s || undefined, planning.minLiquidityCents);
 
   const lowest = buckets.reduce((min, b) => (b.endLiquidity < min.endLiquidity ? b : min), buckets[0]);
+  const overdue = buckets[0]?.overdueInflow ?? 0;
 
   return (
     <div className="space-y-6">
@@ -50,6 +51,18 @@ export default async function ForecastPage({
         </form>
       </div>
 
+      {overdue > 0 && (
+        <div className="card flex items-start gap-3 border-sky-200 bg-sky-50 text-sm text-sky-900">
+          <span className="text-xl">ℹ️</span>
+          <div>
+            Die erste Woche enthält <strong>{formatCents(overdue)}</strong> aus bereits <strong>überfälligen
+            Forderungen</strong> (Rückstand), die die Vorschau als „jetzt fällig" ansetzt. Das erklärt einen hohen
+            Zufluss in KW {buckets[0].label.split(" ")[1]}.{" "}
+            <Link href="/receivables" className="underline">Forderungen ansehen →</Link>
+          </div>
+        </div>
+      )}
+
       {lowest && lowest.belowThreshold && (
         <div className="card flex items-start gap-3 border-amber-200 bg-amber-50 text-sm text-amber-800">
           <span className="text-xl">🔔</span>
@@ -66,6 +79,10 @@ export default async function ForecastPage({
             label: b.label.split(" · ")[0],
             inflow: b.inflow,
             outflow: b.outflow,
+            inflowRealized: b.inflowRealized,
+            inflowPlanned: b.inflowPlanned,
+            outflowRealized: b.outflowRealized,
+            outflowPlanned: b.outflowPlanned,
             endLiquidity: b.endLiquidity,
             isFuture: b.index > 0,
             isCurrent: b.index === 0,
@@ -84,6 +101,7 @@ export default async function ForecastPage({
               <th className="px-3 py-2 text-right">Auszahlungen</th>
               <th className="px-3 py-2 text-right">Netto</th>
               <th className="px-3 py-2 text-right">Ende</th>
+              <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
@@ -91,11 +109,21 @@ export default async function ForecastPage({
               <tr key={b.index} className={`border-b border-slate-50 ${b.belowThreshold ? "bg-amber-50" : ""}`}>
                 <td className="px-3 py-1.5 font-medium text-slate-700">{b.label}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{formatCents(b.startLiquidity)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-emerald-700">{b.inflow ? formatCents(b.inflow) : "–"}</td>
+                <td className="px-3 py-1.5 text-right tabular-nums text-emerald-700">
+                  {b.inflow ? formatCents(b.inflow) : "–"}
+                  {b.index === 0 && b.inflowRealized > 0 && (
+                    <div className="text-xs font-normal text-slate-400">davon realisiert {formatCents(b.inflowRealized)}</div>
+                  )}
+                </td>
                 <td className="px-3 py-1.5 text-right tabular-nums text-red-600">{b.outflow ? formatCents(-b.outflow) : "–"}</td>
                 <td className={`px-3 py-1.5 text-right tabular-nums ${b.net < 0 ? "text-red-600" : "text-slate-700"}`}>{formatCents(b.net)}</td>
                 <td className={`px-3 py-1.5 text-right font-semibold tabular-nums ${b.endLiquidity < 0 ? "text-red-600" : b.belowThreshold ? "text-amber-700" : "text-slate-900"}`}>
                   {formatCents(b.endLiquidity)}
+                </td>
+                <td className="px-3 py-1.5 text-right">
+                  <Link href={`/drilldown?metric=range&from=${b.startISO}&to=${b.endISO}`} className="text-xs text-brand hover:underline">
+                    Details
+                  </Link>
                 </td>
               </tr>
             ))}
@@ -103,8 +131,8 @@ export default async function ForecastPage({
         </table>
       </div>
       <p className="text-xs text-slate-400">
-        Basis: gebuchte Salden + Planposten + offene Posten (fällig­keitsgenau). Szenarien wirken wie
-        in der <Link href="/scenarios" className="text-brand underline">Szenarien</Link>-Ansicht.
+        Start + Netto = Ende (verankert am aktuellen Kontostand). Basis: gebuchte Salden + Planposten +
+        offene Posten (fälligkeitsgenau); überfällige Forderungen werden auf die laufende Woche gezogen.
       </p>
     </div>
   );

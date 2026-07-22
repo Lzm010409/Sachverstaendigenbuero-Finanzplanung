@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { addDays, addMonths, startOfDayUTC, todayUTC } from "./dates";
+import { addDays, addMonths, isoDate, startOfDayUTC, todayUTC } from "./dates";
 import { getTotalBalanceCents, INCLUDED_ACCOUNT } from "./queries";
 
 export type Granularity = "week" | "month" | "year";
@@ -81,13 +81,21 @@ export interface BreakdownResult {
  */
 export async function getCategoryBreakdown(
   granularity: Granularity = "month",
+  offset = 0, // 0 = aktuell; jede Stufe verschiebt das Fenster um eine volle Periode zurück
 ): Promise<BreakdownResult> {
-  const today = todayUTC();
-  const periods = buildPeriods(granularity, today);
+  const base = todayUTC();
+  const back = Math.max(0, Math.floor(offset));
+  let ref = base;
+  if (back > 0) {
+    if (granularity === "month") ref = addMonths(base, -12 * back);
+    else if (granularity === "week") ref = addDays(base, -7 * 12 * back);
+    else ref = new Date(Date.UTC(base.getUTCFullYear() - 4 * back, base.getUTCMonth(), base.getUTCDate()));
+  }
+  const periods = buildPeriods(granularity, ref);
   const rangeStart = periods[0].start;
   const rangeEnd = periods[periods.length - 1].end;
-  const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
-  const yearEnd = new Date(Date.UTC(today.getUTCFullYear() + 1, 0, 1));
+  const yearStart = new Date(Date.UTC(ref.getUTCFullYear(), 0, 1));
+  const yearEnd = new Date(Date.UTC(ref.getUTCFullYear() + 1, 0, 1));
 
   const [categories, txs, yearTxs] = await Promise.all([
     prisma.category.findMany({ orderBy: [{ kind: "asc" }, { name: "asc" }] }),
@@ -164,6 +172,8 @@ export async function getCategoryBreakdown(
 export interface CashflowMonth {
   key: string;
   label: string;
+  startISO: string;
+  endISO: string; // letzter Tag des Monats (inklusiv)
   isFuture: boolean;
   isCurrent: boolean;
   inflow: number;
@@ -339,6 +349,8 @@ export async function getCashflowMatrix(
     months: months.map((m, i) => ({
       key: m.key,
       label: m.label,
+      startISO: isoDate(m.start),
+      endISO: isoDate(addDays(m.end, -1)),
       isFuture: m.isFuture,
       isCurrent: m.isCurrent,
       inflow: inflow[i],

@@ -1,7 +1,16 @@
 import { getAccountsWithBalance } from "@/lib/queries";
+import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/money";
-import { archiveAccount, toggleAccountExcluded, updateAccountOpening } from "@/app/actions/accounts";
+import {
+  archiveAccount,
+  deleteAccount,
+  deleteAccountTransactions,
+  restoreAccount,
+  toggleAccountExcluded,
+  updateAccountOpening,
+} from "@/app/actions/accounts";
 import { AccountForm } from "./account-form";
+import { DangerButton } from "./danger-button";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +33,14 @@ export default async function AccountsPage() {
   const total = accounts
     .filter((a) => !a.excludedFromCalc)
     .reduce((s, a) => s + a.currentBalance, 0);
+
+  // Archivierte Konten separat (mit Umsatzanzahl) – bleiben aus allen
+  // Berechnungen ausgeschlossen.
+  const archived = await prisma.account.findMany({
+    where: { archived: true },
+    orderBy: { name: "asc" },
+    include: { _count: { select: { transactions: true } } },
+  });
 
   return (
     <div className="space-y-6">
@@ -120,12 +137,23 @@ export default async function AccountsPage() {
                       </form>
                     </td>
                     <td className="td text-right">
-                      <form action={archiveAccount}>
-                        <input type="hidden" name="id" value={a.id} />
-                        <button type="submit" className="text-xs text-slate-400 hover:text-red-600">
-                          archivieren
-                        </button>
-                      </form>
+                      <div className="flex flex-col items-end gap-1">
+                        <form action={archiveAccount}>
+                          <input type="hidden" name="id" value={a.id} />
+                          <button type="submit" className="text-xs text-slate-400 hover:text-amber-600">
+                            archivieren
+                          </button>
+                        </form>
+                        {a.txCount > 0 && (
+                          <DangerButton
+                            action={deleteAccountTransactions}
+                            id={a.id}
+                            confirm={`Wirklich alle ${a.txCount} Umsätze von „${a.name}" löschen? Das Konto bleibt bestehen.`}
+                          >
+                            Umsätze löschen
+                          </DangerButton>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -134,6 +162,53 @@ export default async function AccountsPage() {
           </div>
         )}
       </div>
+
+      {archived.length > 0 && (
+        <div className="card">
+          <h2 className="mb-3 text-sm font-semibold text-slate-700">Archivierte Konten</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Archivierte Konten zählen nicht in Saldo, Vorschau oder Auswertung. Ihre Umsätze bleiben
+            gespeichert, bis das Konto endgültig gelöscht wird.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="th">Name</th>
+                  <th className="th">Umsätze</th>
+                  <th className="th text-right">Aktionen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {archived.map((a) => (
+                  <tr key={a.id} className="border-b border-slate-50 opacity-70">
+                    <td className="td font-medium">
+                      {a.name}
+                      <span className="ml-2 badge bg-slate-100 text-slate-500">archiviert</span>
+                    </td>
+                    <td className="td">{a._count.transactions}</td>
+                    <td className="td">
+                      <div className="flex items-center justify-end gap-4">
+                        <form action={restoreAccount}>
+                          <input type="hidden" name="id" value={a.id} />
+                          <button className="text-xs text-brand hover:underline">wiederherstellen</button>
+                        </form>
+                        <DangerButton
+                          action={deleteAccount}
+                          id={a.id}
+                          confirm={`Konto „${a.name}" endgültig löschen — inklusive ${a._count.transactions} Umsätzen? Das kann nicht rückgängig gemacht werden.`}
+                        >
+                          endgültig löschen (inkl. Umsätze)
+                        </DangerButton>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

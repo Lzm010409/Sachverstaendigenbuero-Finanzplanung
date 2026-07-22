@@ -55,6 +55,40 @@ export async function archiveAccount(formData: FormData) {
   revalidatePath("/");
 }
 
+export async function restoreAccount(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.account.update({ where: { id }, data: { archived: false } });
+  revalidatePath("/accounts");
+  revalidatePath("/");
+}
+
+/**
+ * Löscht ein Konto endgültig – inklusive aller zugehörigen Umsätze (Cascade).
+ * Damit verschwinden Umsätze archivierter/gelöschter Konten auch aus der
+ * Umsatzliste.
+ */
+export async function deleteAccount(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.account.delete({ where: { id } });
+  revalidatePath("/accounts");
+  revalidatePath("/transactions");
+  revalidatePath("/");
+  revalidatePath("/breakdown");
+}
+
+/** Löscht nur die Umsätze eines Kontos (Konto bleibt bestehen). */
+export async function deleteAccountTransactions(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.transaction.deleteMany({ where: { accountId: id } });
+  revalidatePath("/accounts");
+  revalidatePath("/transactions");
+  revalidatePath("/");
+  revalidatePath("/breakdown");
+}
+
 export async function toggleAccountExcluded(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;

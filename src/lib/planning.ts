@@ -1,5 +1,6 @@
 import { getSettings } from "./settings";
-import { getForecast } from "./queries";
+import { getForecast, getTotalBalanceCents, INCLUDED_ACCOUNT } from "./queries";
+import { prisma } from "./db";
 import { addDays, isoDate, todayUTC } from "./dates";
 import type { ForecastResult } from "./forecast";
 
@@ -15,7 +16,8 @@ export async function getPlanningSettings(): Promise<PlanningSettings> {
   return {
     minLiquidityCents: Number(s["liquidity.minThreshold"] ?? 0) || 0,
     vatRatePercent: s["tax.vatRate"] != null ? Number(s["tax.vatRate"]) : 19,
-    vatCycle: s["tax.vatCycle"] === "monthly" ? "monthly" : "quarterly",
+    // Standard: monatliche USt-Voranmeldung.
+    vatCycle: s["tax.vatCycle"] === "quarterly" ? "quarterly" : "monthly",
     notifyEmail: s["notify.email"] || null,
   };
 }
@@ -49,6 +51,11 @@ export interface WeekBucket {
   startLiquidity: number;
   inflow: number;
   outflow: number; // positiv
+  inflowRealized: number;
+  inflowPlanned: number;
+  outflowRealized: number; // positiv
+  outflowPlanned: number; // positiv
+  overdueInflow: number; // Anteil aus überfälligen Forderungen (in inflowPlanned enthalten)
   net: number;
   endLiquidity: number;
   belowThreshold: boolean;
@@ -73,44 +80,79 @@ export async function getWeeklyForecast(
   thresholdCents = 0,
 ): Promise<{ startBalance: number; weeks: WeekBucket[] }> {
   const days = weeks * 7 + 7;
-  const forecast = await getForecast(days, scenarioId);
   const today = todayUTC();
-  // Auf Montag der aktuellen Woche zurückgehen.
   const mondayOffset = (today.getUTCDay() + 6) % 7;
   const firstMonday = addDays(today, -mondayOffset);
 
+  const [forecast, currentBalance, weekTxs, overdueItems] = await Promise.all([
+    getForecast(days, scenarioId),
+    getTotalBalanceCents(),
+    // Bereits gebuchte Umsätze der laufenden Woche (Montag bis heute) = realisiert.
+    prisma.transaction.findMany({
+      where: { bookingDate: { gte: firstMonday, lte: today }, account: INCLUDED_ACCOUNT },
+      select: { amount: true },
+    }),
+    // Überfällige offene Forderungen (werden von der Engine auf "heute" gezogen).
+    prisma.openItem.findMany({
+      where: { paid: false, kind: "RECEIVABLE", dueDate: { lt: today } },
+      select: { amount: true, paidAmount: true },
+    }),
+  ]);
+
   const byDate = new Map(forecast.points.map((p) => [p.date, p]));
-  const startBalance = forecast.points[0]?.balance ?? 0;
+
+  // Realisiert in der laufenden Woche (bereits im currentBalance enthalten).
+  let realizedIn = 0;
+  let realizedOut = 0;
+  for (const t of weekTxs) {
+    if (t.amount >= 0) realizedIn += t.amount;
+    else realizedOut += -t.amount;
+  }
+  const overdueInflowTotal = overdueItems.reduce((s, i) => s + Math.max(0, i.amount - i.paidAmount), 0);
+
+  // Der Walk beginnt am Wochenanfang: currentBalance abzüglich der bereits in
+  // dieser Woche gebuchten (realisierten) Netto-Bewegung.
+  let running = currentBalance - (realizedIn - realizedOut);
 
   const buckets: WeekBucket[] = [];
   for (let w = 0; w < weeks; w++) {
     const start = addDays(firstMonday, w * 7);
-    const end = addDays(start, 6);
-    let inflow = 0;
-    let outflow = 0;
+    // Geplante (zukünftige) Bewegungen dieser Woche aus der Forecast-Engine.
+    let plannedIn = 0;
+    let plannedOut = 0;
     for (let i = 0; i < 7; i++) {
       const p = byDate.get(isoDate(addDays(start, i)));
       if (p) {
-        inflow += p.inflow;
-        outflow += p.outflow;
+        plannedIn += p.inflow;
+        plannedOut += p.outflow;
       }
     }
-    // Start-/End-Liquidität aus den Tagespunkten (Saldo am letzten Tag der Woche).
-    const endPoint = byDate.get(isoDate(end)) ?? byDate.get(isoDate(addDays(start, 6)));
-    const prevEnd = buckets.length ? buckets[buckets.length - 1].endLiquidity : startBalance;
-    const endLiquidity = endPoint ? endPoint.balance : prevEnd + inflow - outflow;
+    // Realisierte Bewegungen nur in der laufenden Woche (w === 0).
+    const rIn = w === 0 ? realizedIn : 0;
+    const rOut = w === 0 ? realizedOut : 0;
+    const inflow = rIn + plannedIn;
+    const outflow = rOut + plannedOut;
+    const net = inflow - outflow;
+    const startLiquidity = running;
+    const endLiquidity = startLiquidity + net; // Invariante: Start + Netto = Ende
+    running = endLiquidity;
     buckets.push({
       index: w,
       startISO: isoDate(start),
-      endISO: isoDate(end),
+      endISO: isoDate(addDays(start, 6)),
       label: `KW ${isoWeek(start)} · ${start.getUTCDate()}.${start.getUTCMonth() + 1}.`,
-      startLiquidity: prevEnd,
+      startLiquidity,
       inflow,
       outflow,
-      net: inflow - outflow,
+      inflowRealized: rIn,
+      inflowPlanned: plannedIn,
+      outflowRealized: rOut,
+      outflowPlanned: plannedOut,
+      overdueInflow: w === 0 ? overdueInflowTotal : 0,
+      net,
       endLiquidity,
       belowThreshold: thresholdCents > 0 && endLiquidity < thresholdCents,
     });
   }
-  return { startBalance, weeks: buckets };
+  return { startBalance: currentBalance, weeks: buckets };
 }

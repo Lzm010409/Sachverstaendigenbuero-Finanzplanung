@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getCategoryBreakdown, type BreakdownRow, type Granularity } from "@/lib/analytics";
 import { formatCents } from "@/lib/money";
 import { budgetCellColor } from "@/lib/budget-color";
@@ -73,13 +74,16 @@ function Section({
 export default async function BreakdownPage({
   searchParams,
 }: {
-  searchParams: Promise<{ g?: string }>;
+  searchParams: Promise<{ g?: string; offset?: string }>;
 }) {
   const sp = await searchParams;
   const granularity: Granularity =
     sp.g === "week" || sp.g === "year" ? (sp.g as Granularity) : "month";
-  const data = await getCategoryBreakdown(granularity);
+  const offset = Math.max(0, Number(sp.offset) || 0);
+  const data = await getCategoryBreakdown(granularity, offset);
   const hasRows = data.incomeRows.length > 0 || data.expenseRows.length > 0;
+  const rangeLabel = `${data.periods[0]?.label} – ${data.periods[data.periods.length - 1]?.label}`;
+  const qs = (o: number) => `/breakdown?g=${granularity}${o > 0 ? `&offset=${o}` : ""}`;
 
   return (
     <div className="space-y-6">
@@ -90,7 +94,18 @@ export default async function BreakdownPage({
             Transaktionen je Kategorie und Zeitraum, inkl. Jahresbudget-Verbrauch
           </p>
         </div>
-        <GranularityToggle current={granularity} />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1">
+            <Link href={qs(offset + 1)} className="btn-secondary px-2 py-1 text-sm" title="früher">←</Link>
+            <span className="min-w-[130px] text-center text-sm text-slate-600">{rangeLabel}</span>
+            {offset > 0 ? (
+              <Link href={qs(offset - 1)} className="btn-secondary px-2 py-1 text-sm" title="später">→</Link>
+            ) : (
+              <span className="btn-secondary cursor-not-allowed px-2 py-1 text-sm opacity-40">→</span>
+            )}
+          </div>
+          <GranularityToggle current={granularity} />
+        </div>
       </div>
 
       <div className="card overflow-x-auto p-0">
@@ -101,11 +116,17 @@ export default async function BreakdownPage({
             <thead>
               <tr className="border-b border-slate-200">
                 <th className="th sticky left-0 z-10 bg-white">Kategorie</th>
-                {data.periods.map((p) => (
-                  <th key={p.key} className="th text-right">
-                    {p.label}
-                  </th>
-                ))}
+                {data.periods.map((p) => {
+                  const from = p.start.toISOString().slice(0, 10);
+                  const to = new Date(p.end.getTime() - 86_400_000).toISOString().slice(0, 10);
+                  return (
+                    <th key={p.key} className="th text-right">
+                      <Link href={`/drilldown?metric=range&from=${from}&to=${to}`} className="hover:text-brand hover:underline">
+                        {p.label}
+                      </Link>
+                    </th>
+                  );
+                })}
                 <th className="th text-right">Jahresbudget</th>
                 <th className="th text-right">% Jahr</th>
               </tr>

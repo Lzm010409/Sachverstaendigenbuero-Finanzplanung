@@ -6,7 +6,7 @@ import { formatCents } from "@/lib/money";
 export const dynamic = "force-dynamic";
 
 export default async function TaxPage() {
-  const { ratePercent, cycle, periods } = await getVatForecast(2, 3);
+  const { ratePercent, cycle, source, periods } = await getVatForecast(3, 3);
   const today = todayUTC();
   const upcoming = periods.filter((p) => p.dueDate >= today && p.vatPayable > 0);
   const nextDue = upcoming[0];
@@ -16,8 +16,13 @@ export default async function TaxPage() {
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Steuer-/USt-Vorschau</h1>
         <p className="text-sm text-slate-500">
-          Geschätzte Umsatzsteuer-Zahllast je {cycle === "monthly" ? "Monat" : "Quartal"} bei {String(ratePercent).replace(".", ",")} % ·
-          Satz &amp; Zyklus unter <Link href="/settings" className="text-brand underline">Einstellungen</Link>.
+          Umsatzsteuer-Zahllast je {cycle === "monthly" ? "Monat" : "Quartal"} ·{" "}
+          {source === "sevdesk" ? (
+            <span className="text-emerald-600">aus sevDesk (nur EUR-Belege/Rechnungen mit MwSt &gt; 0)</span>
+          ) : (
+            <span className="text-amber-600">geschätzt aus Umsätzen ({String(ratePercent).replace(".", ",")} %)</span>
+          )}{" "}
+          · Zyklus unter <Link href="/settings" className="text-brand underline">Einstellungen</Link>.
         </p>
       </div>
 
@@ -68,9 +73,9 @@ export default async function TaxPage() {
         </table>
       </div>
       <p className="text-xs text-slate-400">
-        Vereinfachte Schätzung aus den gebuchten Umsätzen (Brutto → Netto bei einheitlichem Satz).
-        §13b, innergemeinschaftliche Umsätze und Sonderfälle sind nicht berücksichtigt — als Orientierung,
-        nicht als Steuererklärung. Ausgaben zählen als Vorsteuerabzug, Erlöse als USt.
+        {source === "sevdesk"
+          ? "Basis: tatsächliche Steuerbeträge (sumTax) der Rechnungen (USt) und Belege (Vorsteuer) aus sevDesk, ausschließlich in EUR und mit MwSt > 0, nach Beleg-/Rechnungsdatum. Soll-Versteuerung; §13b und Sonderfälle unberücksichtigt — als Orientierung, nicht als Steuererklärung."
+          : "Kein sevDesk-Token: vereinfachte Schätzung aus den gebuchten Umsätzen (Brutto → Netto bei einheitlichem Satz)."}
       </p>
     </div>
   );

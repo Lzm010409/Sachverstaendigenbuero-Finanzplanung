@@ -3,7 +3,8 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { INCLUDED_ACCOUNT, getAccountsWithBalance, getTotalBalanceCents } from "@/lib/queries";
 import { getKpis } from "@/lib/analytics";
-import { addMonths, todayUTC } from "@/lib/dates";
+import { occurrencesBetween } from "@/lib/recurrence";
+import { addMonths, isoDate, startOfDayUTC, todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
 import { Pagination } from "@/components/pagination";
 
@@ -18,7 +19,8 @@ type Metric =
   | "runway"
   | "workingCapital"
   | "receivables"
-  | "payables";
+  | "payables"
+  | "range";
 
 const TITLES: Record<Metric, string> = {
   balance: "Verfügbare Liquidität",
@@ -28,6 +30,7 @@ const TITLES: Record<Metric, string> = {
   workingCapital: "Working Capital",
   receivables: "Offene Forderungen",
   payables: "Offene Verbindlichkeiten",
+  range: "Bewegungen im Zeitraum",
 };
 
 function Header({ title, total, sub }: { title: string; total?: number; sub?: string }) {
@@ -295,14 +298,84 @@ async function RunwayDrill() {
   );
 }
 
+async function RangeDrill({ from, to }: { from: string; to: string }) {
+  const today = todayUTC();
+  const fromD = startOfDayUTC(new Date(from + "T00:00:00Z"));
+  const toD = startOfDayUTC(new Date(to + "T00:00:00Z"));
+  const toExcl = new Date(toD.getTime() + 86_400_000);
+
+  const [txs, openItems, planned] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { bookingDate: { gte: fromD, lt: toExcl }, account: INCLUDED_ACCOUNT },
+      orderBy: { bookingDate: "asc" },
+      include: { account: true, category: true },
+    }),
+    prisma.openItem.findMany({ where: { paid: false }, select: { kind: true, amount: true, paidAmount: true, dueDate: true, counterparty: true, reference: true } }),
+    prisma.plannedItem.findMany({ where: { active: true } }),
+  ]);
+
+  type Row = { date: string; label: string; sub?: string | null; amount: number; type: string };
+  const rows: Row[] = [];
+  for (const t of txs) rows.push({ date: isoDate(t.bookingDate), label: t.counterparty || t.purpose || "Umsatz", sub: t.category?.name ?? t.account.name, amount: t.amount, type: "realisiert" });
+  for (const oi of openItems) {
+    const remaining = Math.max(0, oi.amount - oi.paidAmount);
+    if (remaining <= 0) continue;
+    const eff = oi.dueDate.getTime() < today.getTime() ? today : startOfDayUTC(oi.dueDate);
+    if (eff.getTime() < fromD.getTime() || eff.getTime() >= toExcl.getTime()) continue;
+    rows.push({ date: isoDate(eff), label: oi.counterparty || (oi.kind === "RECEIVABLE" ? "Forderung" : "Verbindlichkeit"), sub: oi.reference, amount: oi.kind === "RECEIVABLE" ? remaining : -remaining, type: oi.dueDate.getTime() < today.getTime() ? "überfällig" : "geplant" });
+  }
+  for (const p of planned) {
+    for (const occ of occurrencesBetween(p, fromD, toD)) {
+      rows.push({ date: isoDate(occ), label: p.name, sub: "Planposten", amount: p.amount, type: "geplant" });
+    }
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date));
+  const total = rows.reduce((s, r) => s + r.amount, 0);
+
+  return (
+    <div className="space-y-6">
+      <Header title={`Bewegungen ${new Date(from).toLocaleDateString("de-DE")} – ${new Date(to).toLocaleDateString("de-DE")}`} total={total} sub={`${rows.length} Positionen`} />
+      <div className="card overflow-x-auto">
+        {rows.length === 0 ? (
+          <p className="text-sm text-slate-400">Keine Bewegungen in diesem Zeitraum.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                <th className="th">Datum</th><th className="th">Position</th><th className="th">Art</th><th className="th text-right">Betrag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} className="border-b border-slate-50">
+                  <td className="td whitespace-nowrap">{new Date(r.date).toLocaleDateString("de-DE")}</td>
+                  <td className="td"><div className="font-medium text-slate-700">{r.label}</div>{r.sub && <div className="text-xs text-slate-400">{r.sub}</div>}</td>
+                  <td className="td"><span className={`badge ${r.type === "realisiert" ? "bg-slate-100 text-slate-600" : r.type === "überfällig" ? "bg-amber-100 text-amber-700" : "bg-sky-100 text-sky-700"}`}>{r.type}</span></td>
+                  <td className={`td text-right font-semibold tabular-nums ${r.amount < 0 ? "text-red-600" : "text-emerald-600"}`}>{formatCents(r.amount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default async function DrilldownPage({
   searchParams,
 }: {
-  searchParams: Promise<{ metric?: string; page?: string }>;
+  searchParams: Promise<{ metric?: string; page?: string; from?: string; to?: string }>;
 }) {
   const sp = await searchParams;
   const metric = (sp.metric ?? "balance") as Metric;
   const page = Math.max(1, Number(sp.page) || 1);
+
+  switch (metric) {
+    case "range":
+      if (sp.from && sp.to) return <RangeDrill from={sp.from} to={sp.to} />;
+      break;
+  }
 
   switch (metric) {
     case "income3m":

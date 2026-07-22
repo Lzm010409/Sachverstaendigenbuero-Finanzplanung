@@ -4,6 +4,7 @@ import { getReceivablesReport, REMINDER_LABELS, suggestedReminderLevel } from "@
 import { setReminderLevel } from "@/app/actions/openitems";
 import { todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
+import { PageAlerts } from "@/components/page-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,8 @@ export default async function ReceivablesPage() {
         <h1 className="text-2xl font-bold text-slate-900">Forderungsmanagement</h1>
         <p className="text-sm text-slate-500">Alterstruktur, Zahlungsdauer (DSO) und Mahnstufen.</p>
       </div>
+
+      <PageAlerts page="/receivables" />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <div className="card">

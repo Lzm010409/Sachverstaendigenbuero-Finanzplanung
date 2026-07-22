@@ -1,5 +1,6 @@
 import { getConcentration } from "@/lib/concentration";
 import { formatCents } from "@/lib/money";
+import { PageAlerts } from "@/components/page-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,8 @@ export default async function ConcentrationPage({ searchParams }: { searchParams
           <button className="btn-secondary ml-2 px-3 py-1 text-sm">Anzeigen</button>
         </form>
       </div>
+
+      <PageAlerts page="/concentration" />
 
       <div className="grid gap-4 sm:grid-cols-4">
         <div className="card"><div className="text-xs uppercase text-slate-500">Erlöse gesamt</div><div className="mt-1 text-xl font-bold">{formatCents(report.totalRevenue)}</div></div>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getVatForecast } from "@/lib/tax";
 import { todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
+import { PageAlerts } from "@/components/page-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,8 @@ export default async function TaxPage() {
           · Zyklus unter <Link href="/settings" className="text-brand underline">Einstellungen</Link>.
         </p>
       </div>
+
+      <PageAlerts page="/tax" />
 
       {nextDue && (
         <div className="card flex items-start gap-3 border-amber-200 bg-amber-50 text-sm text-amber-800">

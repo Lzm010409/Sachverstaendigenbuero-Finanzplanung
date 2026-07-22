@@ -5,6 +5,7 @@ import { formatCents } from "@/lib/money";
 import { deleteTransaction } from "@/app/actions/transactions";
 import { TxCategorySelect } from "./tx-category-select";
 import { Pagination } from "@/components/pagination";
+import { PageAlerts } from "@/components/page-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +52,8 @@ export default async function TransactionsPage({
         <h1 className="text-2xl font-bold text-slate-900">Umsätze</h1>
         <span className="text-sm text-slate-500">{totalCount} Buchungen</span>
       </div>
+
+      <PageAlerts page="/transactions" />
 
       <form className="card flex flex-wrap items-end gap-3" method="get">
         <div>

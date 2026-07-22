@@ -3,6 +3,7 @@ import { getCategoryBreakdown, type BreakdownRow, type Granularity } from "@/lib
 import { formatCents } from "@/lib/money";
 import { budgetCellColor } from "@/lib/budget-color";
 import { GranularityToggle } from "@/components/granularity-toggle";
+import { PageAlerts } from "@/components/page-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,8 @@ export default async function BreakdownPage({
           <GranularityToggle current={granularity} />
         </div>
       </div>
+
+      <PageAlerts page="/breakdown" />
 
       <div className="card overflow-x-auto p-0">
         {!hasRows ? (

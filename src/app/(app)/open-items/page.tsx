@@ -6,6 +6,7 @@ import { todayUTC } from "@/lib/dates";
 import { deleteOpenItem, setOpenItemPayment, toggleOpenItemPaid } from "@/app/actions/openitems";
 import { OpenItemForm } from "./open-item-form";
 import { Pagination } from "@/components/pagination";
+import { PageAlerts } from "@/components/page-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +91,8 @@ export default async function OpenItemsPage({
         ein. Teilzahlungen und Status lassen sich auch manuell pflegen; per sevDesk synchronisierte
         Posten werden beim nächsten Sync automatisch abgeglichen.
       </p>
+
+      <PageAlerts page="/open-items" />
 
       <div className="grid gap-4 sm:grid-cols-3">
         {kpi("/open-items?kind=RECEIVABLE", sp.kind === "RECEIVABLE", "Offene Forderungen", formatCents(receivables), "text-emerald-600")}

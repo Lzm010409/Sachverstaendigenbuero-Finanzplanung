@@ -1,8 +1,9 @@
 import { prisma } from "./db";
 import { getForecast, getTotalBalanceCents } from "./queries";
 import { getKpis } from "./analytics";
-import { getPlanningSettings, findThresholdBreach } from "./planning";
+import { getPlanningSettings } from "./planning";
 import { getReceivablesReport } from "./receivables";
+import { getAllAnomalies } from "./anomalies";
 import { todayUTC } from "./dates";
 import { formatCents } from "./money";
 
@@ -25,50 +26,25 @@ export interface Digest {
   lowestForecast: { date: string; balance: number };
 }
 
-/** Baut den Liquiditäts-Digest inkl. Alarme (Schwelle, Überfälligkeit). */
+/** Baut den Liquiditäts-Digest inkl. Anomalie-Meldungen (info/warn/error). */
 export async function buildDigest(): Promise<Digest> {
   const today = todayUTC();
-  const [settings, balance, kpis, forecast, recv] = await Promise.all([
-    getPlanningSettings(),
+  const [balance, kpis, forecast, recv, anomalies] = await Promise.all([
     getTotalBalanceCents(),
     getKpis(),
     getForecast(90),
     getReceivablesReport(),
+    getAllAnomalies(),
   ]);
 
-  const alerts: Alert[] = [];
-
-  const breach = findThresholdBreach(forecast, settings.minLiquidityCents);
-  if (settings.minLiquidityCents > 0 && breach) {
-    alerts.push({
-      level: breach.daysAway <= 14 ? "critical" : "warn",
-      title: "Liquidität unter Mindestschwelle",
-      detail: `Am ${new Date(breach.date).toLocaleDateString("de-DE")} (${breach.daysAway} Tage) fällt die Prognose auf ${formatCents(breach.balance)} — unter deine Schwelle von ${formatCents(settings.minLiquidityCents)}.`,
-    });
-  }
-  if (forecast.lowest.balance < 0) {
-    alerts.push({
-      level: "critical",
-      title: "Negative Liquidität prognostiziert",
-      detail: `Tiefpunkt am ${new Date(forecast.lowest.date).toLocaleDateString("de-DE")}: ${formatCents(forecast.lowest.balance)}.`,
-    });
-  }
-  if (recv.overdueOpen > 0) {
-    alerts.push({
-      level: recv.overdueOpen > 5000_00 ? "warn" : "info",
-      title: "Überfällige Forderungen",
-      detail: `${formatCents(recv.overdueOpen)} offen und überfällig${recv.dsoDays != null ? ` · Ø Zahlungsdauer ${recv.dsoDays} Tage` : ""}.`,
-    });
-  }
-  if (kpis.runwayMonths != null && kpis.runwayMonths < 6) {
-    alerts.push({
-      level: kpis.runwayMonths < 3 ? "critical" : "warn",
-      title: "Kurze Reichweite",
-      detail: `Bei aktuellem Netto-Verbrauch reicht die Liquidität noch ${kpis.runwayMonths} Monate.`,
-    });
-  }
+  // Anomalien der Engine in Digest-Alarme übersetzen (error -> critical).
+  const alerts: Alert[] = anomalies.map((a) => ({
+    level: a.level === "error" ? "critical" : a.level,
+    title: a.title,
+    detail: a.detail,
+  }));
   if (alerts.length === 0) {
-    alerts.push({ level: "info", title: "Alles im grünen Bereich", detail: "Keine Liquiditätsrisiken in den nächsten 90 Tagen erkannt." });
+    alerts.push({ level: "info", title: "Alles im grünen Bereich", detail: "Keine Auffälligkeiten erkannt." });
   }
 
   const overdueBuckets = recv.buckets.filter((b) => b.minDays >= 1);

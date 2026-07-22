@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/accounts";
 import { AccountForm } from "./account-form";
 import { DangerButton } from "./danger-button";
+import { PageAlerts } from "@/components/page-alerts";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,8 @@ export default async function AccountsPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">Konten</h1>
+
+      <PageAlerts page="/accounts" />
 
       <div className="card">
         <h2 className="mb-4 text-sm font-semibold text-slate-700">Neues Konto</h2>

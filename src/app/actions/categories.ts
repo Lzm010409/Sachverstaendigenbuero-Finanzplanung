@@ -87,6 +87,47 @@ export async function deleteRule(formData: FormData) {
   revalidatePath("/categories");
 }
 
+const ruleUpdateSchema = ruleSchema.extend({ id: z.string().min(1) });
+
+export async function updateRule(formData: FormData): Promise<FormState> {
+  const parsed = ruleUpdateSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.errors[0]?.message };
+  const d = parsed.data;
+  const pattern = (d.pattern ?? "").trim();
+  const amountOp = d.amountOp || null;
+  const amountValue = amountOp ? parseAmountToCents(d.amountValue ?? "") : null;
+
+  if (!pattern && amountOp == null) {
+    return { error: "Mindestens ein Muster oder eine Betrags-Bedingung angeben." };
+  }
+  if (amountOp && amountValue == null) {
+    return { error: "Betrag für die Bedingung angeben." };
+  }
+
+  await prisma.rule.update({
+    where: { id: d.id },
+    data: {
+      categoryId: d.categoryId,
+      field: d.field,
+      pattern: pattern || null,
+      amountOp,
+      amountValue,
+      priority: Number(d.priority) || 100,
+    },
+  });
+  revalidatePath("/categories");
+  return { ok: true };
+}
+
+export async function toggleRuleActive(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const rule = await prisma.rule.findUnique({ where: { id }, select: { active: true } });
+  if (!rule) return;
+  await prisma.rule.update({ where: { id }, data: { active: !rule.active } });
+  revalidatePath("/categories");
+}
+
 // Aktualisiert die Kategorie vieler Umsätze effizient (gruppiert nach Kategorie).
 async function bulkAssign(byCat: Map<string, string[]>): Promise<number> {
   let updated = 0;

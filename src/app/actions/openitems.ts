@@ -84,3 +84,13 @@ export async function deleteOpenItem(formData: FormData) {
   revalidatePath("/open-items");
   revalidatePath("/");
 }
+
+/** Setzt die Mahnstufe (0–3) einer Forderung. */
+export async function setReminderLevel(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const level = Math.max(0, Math.min(3, Number(formData.get("level") ?? 0)));
+  await prisma.openItem.update({ where: { id }, data: { reminderLevel: level } });
+  revalidatePath("/receivables");
+  revalidatePath("/open-items");
+}

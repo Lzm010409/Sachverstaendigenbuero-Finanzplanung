@@ -1,10 +1,16 @@
 import { getSettings } from "@/lib/settings";
+import { getPlanningSettings } from "@/lib/planning";
 import { prisma } from "@/lib/db";
 import { toggleIntegration, saveIntegrationToken, savePipedriveConfig } from "@/app/actions/settings";
+import { savePlanningSettings } from "@/app/actions/planning-settings";
 import { SevdeskSync } from "./sevdesk-sync";
 import { PipedriveSync } from "./pipedrive-sync";
 
 export const dynamic = "force-dynamic";
+
+function euroInput(cents: number): string {
+  return cents > 0 ? (cents / 100).toFixed(2).replace(".", ",") : "";
+}
 
 function Toggle({ name, enabled }: { name: string; enabled: boolean }) {
   return (
@@ -42,11 +48,50 @@ export default async function SettingsPage() {
   const pipeTokenSet = !!s["pipedrive.token"] || !!process.env.PIPEDRIVE_API_TOKEN;
   const pipeDomainSet = !!s["pipedrive.domain"] || !!process.env.PIPEDRIVE_COMPANY_DOMAIN;
   const contactCount = await prisma.contact.count();
+  const plan = await getPlanningSettings();
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">Einstellungen</h1>
-      <p className="-mt-4 text-sm text-slate-500">Integrationen aktivieren und synchronisieren.</p>
+      <p className="-mt-4 text-sm text-slate-500">Integrationen, Planung und Benachrichtigungen.</p>
+
+      {/* Planung & Benachrichtigungen */}
+      <div className="card space-y-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-800">Planung &amp; Benachrichtigungen</h2>
+          <p className="text-sm text-slate-500">
+            Mindestliquidität, USt-Vorschau und E-Mail-Empfänger für den Liquiditäts-Digest.
+          </p>
+        </div>
+        <form action={savePlanningSettings} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label className="label">Mindestliquidität (€)</label>
+            <input name="minLiquidity" defaultValue={euroInput(plan.minLiquidityCents)} className="input" inputMode="decimal" placeholder="z.B. 20000" />
+            <p className="mt-1 text-xs text-slate-400">Warnung bei Unterschreitung.</p>
+          </div>
+          <div>
+            <label className="label">USt-Satz (%)</label>
+            <input name="vatRate" defaultValue={String(plan.vatRatePercent).replace(".", ",")} className="input" inputMode="decimal" placeholder="19" />
+          </div>
+          <div>
+            <label className="label">USt-Voranmeldung</label>
+            <select name="vatPrepayCycle" defaultValue={plan.vatCycle} className="input">
+              <option value="monthly">monatlich</option>
+              <option value="quarterly">vierteljährlich</option>
+            </select>
+          </div>
+          <div>
+            <label className="label">Digest-E-Mail</label>
+            <input name="notifyEmail" defaultValue={plan.notifyEmail ?? ""} className="input" type="email" placeholder="name@firma.de" />
+          </div>
+          <div className="sm:col-span-2 lg:col-span-4">
+            <button className="btn-primary" type="submit">Speichern</button>
+            <span className="ml-3 text-xs text-slate-400">
+              E-Mail-Versand benötigt zusätzlich SMTP-Zugangsdaten (SMTP_HOST/USER/PASS als Umgebungsvariablen).
+            </span>
+          </div>
+        </form>
+      </div>
 
       {/* sevDesk */}
       <div className="card space-y-4">

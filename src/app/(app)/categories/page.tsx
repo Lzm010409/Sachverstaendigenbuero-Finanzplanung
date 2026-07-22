@@ -1,27 +1,14 @@
 import { prisma } from "@/lib/db";
-import { deleteCategory, deleteRule } from "@/app/actions/categories";
+import { deleteCategory } from "@/app/actions/categories";
 import { ApplyRulesButton, CategoryForm, ResetCategoriesButton, RuleForm } from "./category-forms";
+import { RuleRow } from "./rule-row";
 import { BudgetInput } from "./budget-input";
-import { formatCents } from "@/lib/money";
 
 function budgetToInput(cents: number): string {
   return cents > 0 ? (cents / 100).toFixed(2).replace(".", ",") : "";
 }
 
 export const dynamic = "force-dynamic";
-
-const FIELD_LABEL: Record<string, string> = {
-  PURPOSE: "Verwendungszweck",
-  COUNTERPARTY: "Gegenpartei",
-};
-
-const AMOUNT_OP_LABEL: Record<string, string> = {
-  GT: ">",
-  GTE: "≥",
-  LT: "<",
-  LTE: "≤",
-  EQ: "=",
-};
 
 export default async function CategoriesPage() {
   const [categories, rules] = await Promise.all([
@@ -107,23 +94,21 @@ export default async function CategoriesPage() {
                   </thead>
                   <tbody>
                     {rules.map((r) => (
-                      <tr key={r.id} className="border-b border-slate-50">
-                        <td className="td">{r.priority}</td>
-                        <td className="td">{FIELD_LABEL[r.field]}</td>
-                        <td className="td font-mono text-xs">{r.pattern || "—"}</td>
-                        <td className="td whitespace-nowrap text-xs">
-                          {r.amountOp && r.amountValue != null
-                            ? `${AMOUNT_OP_LABEL[r.amountOp]} ${formatCents(r.amountValue)}`
-                            : "—"}
-                        </td>
-                        <td className="td">{r.category.name}</td>
-                        <td className="td text-right">
-                          <form action={deleteRule}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <button className="text-xs text-slate-400 hover:text-red-600">löschen</button>
-                          </form>
-                        </td>
-                      </tr>
+                      <RuleRow
+                        key={r.id}
+                        rule={{
+                          id: r.id,
+                          field: r.field,
+                          pattern: r.pattern,
+                          amountOp: r.amountOp,
+                          amountValue: r.amountValue,
+                          priority: r.priority,
+                          active: r.active,
+                          categoryId: r.categoryId,
+                          categoryName: r.category.name,
+                        }}
+                        categories={categories.map((c) => ({ id: c.id, name: c.name }))}
+                      />
                     ))}
                   </tbody>
                 </table>

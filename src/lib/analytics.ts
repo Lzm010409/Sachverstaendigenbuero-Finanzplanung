@@ -168,6 +168,13 @@ export interface CashflowMonth {
   isCurrent: boolean;
   inflow: number;
   outflow: number; // positiv dargestellt
+  // Aufteilung realisiert (gebuchte Umsätze) vs. geplant (offene Posten +
+  // Planposten). Bei Teilzahlungen: bezahlter Teil realisiert (am Zahldatum),
+  // Rest geplant (zum Fälligkeitsdatum).
+  inflowRealized: number;
+  inflowPlanned: number;
+  outflowRealized: number; // positiv
+  outflowPlanned: number; // positiv
   net: number;
   startLiquidity: number;
   endLiquidity: number;
@@ -249,11 +256,16 @@ export async function getCashflowMatrix(
     }
   }
   for (const oi of openItems) {
+    // Nur den noch offenen Rest als "geplant" ansetzen (bezahlter Teil steckt
+    // bereits als gebuchter Umsatz in `txs` = realisiert). Verhindert Doppel-
+    // zählung bei Teilzahlungen.
+    const remaining = oi.amount - oi.paidAmount;
+    if (remaining <= 0) continue;
     const date = oi.dueDate.getTime() < today.getTime() ? today : startOfDayUTC(oi.dueDate);
     if (date.getTime() >= rangeEnd.getTime()) continue;
     futureEvents.push({
       date,
-      amount: oi.kind === "RECEIVABLE" ? oi.amount : -oi.amount,
+      amount: oi.kind === "RECEIVABLE" ? remaining : -remaining,
       categoryId: oi.categoryId,
     });
   }
@@ -263,16 +275,27 @@ export async function getCashflowMatrix(
   const perCat = new Map<string, number[]>();
   const inflow = new Array(months.length).fill(0);
   const outflow = new Array(months.length).fill(0);
-  const addValue = (mi: number, cid: string | null, amount: number) => {
+  const inflowRealized = new Array(months.length).fill(0);
+  const inflowPlanned = new Array(months.length).fill(0);
+  const outflowRealized = new Array(months.length).fill(0);
+  const outflowPlanned = new Array(months.length).fill(0);
+  const addValue = (mi: number, cid: string | null, amount: number, realized: boolean) => {
     if (mi < 0) return;
     const k = catKey(cid);
     if (!perCat.has(k)) perCat.set(k, new Array(months.length).fill(0));
     perCat.get(k)![mi] += amount;
-    if (amount >= 0) inflow[mi] += amount;
-    else outflow[mi] += -amount;
+    if (amount >= 0) {
+      inflow[mi] += amount;
+      if (realized) inflowRealized[mi] += amount;
+      else inflowPlanned[mi] += amount;
+    } else {
+      outflow[mi] += -amount;
+      if (realized) outflowRealized[mi] += -amount;
+      else outflowPlanned[mi] += -amount;
+    }
   };
-  for (const t of txs) addValue(monthIndex(t.bookingDate), t.categoryId, t.amount);
-  for (const e of futureEvents) addValue(monthIndex(e.date), e.categoryId, e.amount);
+  for (const t of txs) addValue(monthIndex(t.bookingDate), t.categoryId, t.amount, true);
+  for (const e of futureEvents) addValue(monthIndex(e.date), e.categoryId, e.amount, false);
 
   // Liquiditäts-Walk, verankert am aktuellen Kontostand.
   const net = months.map((_, i) => inflow[i] - outflow[i]);
@@ -320,6 +343,10 @@ export async function getCashflowMatrix(
       isCurrent: m.isCurrent,
       inflow: inflow[i],
       outflow: outflow[i],
+      inflowRealized: inflowRealized[i],
+      inflowPlanned: inflowPlanned[i],
+      outflowRealized: outflowRealized[i],
+      outflowPlanned: outflowPlanned[i],
       net: net[i],
       startLiquidity: startLiq[i],
       endLiquidity: endLiq[i],

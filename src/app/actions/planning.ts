@@ -44,6 +44,31 @@ export async function createPlannedItem(formData: FormData): Promise<FormState> 
   return { ok: true };
 }
 
+/** Übernimmt einen Wiederkehrer-Vorschlag als Planposten. */
+export async function createPlannedFromSuggestion(formData: FormData): Promise<void> {
+  const name = String(formData.get("name") ?? "").trim();
+  const amount = Number(formData.get("amount") ?? 0); // Cent, vorzeichenbehaftet
+  const recurrence = String(formData.get("recurrence") ?? "MONTHLY");
+  const categoryId = String(formData.get("categoryId") ?? "") || null;
+  const startISO = String(formData.get("startDate") ?? "");
+  if (!name || !Number.isFinite(amount) || amount === 0) return;
+  const rec = ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"].includes(recurrence) ? recurrence : "MONTHLY";
+  await prisma.plannedItem.create({
+    data: {
+      name,
+      amount: Math.round(amount),
+      recurrence: rec as "WEEKLY" | "MONTHLY" | "QUARTERLY" | "YEARLY",
+      interval: 1,
+      startDate: startISO ? startOfDayUTC(new Date(startISO)) : startOfDayUTC(new Date()),
+      categoryId,
+      note: "aus Wiederkehrer-Erkennung",
+    },
+  });
+  revalidatePath("/recurring");
+  revalidatePath("/planning");
+  revalidatePath("/");
+}
+
 export async function togglePlannedItem(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;

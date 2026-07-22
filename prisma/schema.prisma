@@ -194,6 +194,8 @@ model OpenItem {
   dueDate      DateTime
   paid         Boolean      @default(false)
   paidDate     DateTime?
+  // Mahnstufe (0 = keine, 1 = Zahlungserinnerung, 2 = 1. Mahnung, 3 = 2. Mahnung/Inkasso)
+  reminderLevel Int         @default(0)
   categoryId   String?
   category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   note         String?
@@ -201,6 +203,22 @@ model OpenItem {
 
   @@unique([source, externalId])
   @@index([paid, dueDate])
+}
+
+// Monatlicher Forecast-Snapshot: Zum Monatsanfang wird die für ein Zieldatum
+// prognostizierte Liquidität festgehalten. Später wird der Ist-Wert nachgetragen,
+// um die Prognosegüte auszuwerten.
+model ForecastSnapshot {
+  id                  String   @id @default(cuid())
+  takenOn             DateTime @default(now()) // wann der Snapshot erstellt wurde
+  targetMonth         String // Zielmonat "YYYY-MM"
+  horizonDays         Int // Prognosehorizont in Tagen
+  projectedLiquidity  Int // prognostizierte Liquidität (Cent) für den Zielmonat
+  actualLiquidity     Int? // tatsächliche Liquidität (Cent), nachgetragen
+  createdAt           DateTime @default(now())
+
+  @@unique([targetMonth, horizonDays])
+  @@index([takenOn])
 }
 
 // Szenario zur Simulation (Best/Base/Worst). Wirkt multiplikativ auf geplante

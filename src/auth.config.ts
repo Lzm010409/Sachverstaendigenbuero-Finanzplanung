@@ -32,9 +32,10 @@ const authConfig = {
         path.startsWith("/login") ||
         path.startsWith("/api/auth") ||
         path === "/api/health" ||
-        // Diagnose-Endpunkt erzwingt Token/Session selbst (Edge-Middleware kann
-        // keine node:crypto-Prüfung ausführen).
-        path === "/api/diagnostics";
+        // Diagnose-/Benachrichtigungs-Endpunkte erzwingen Token/Session selbst
+        // (Edge-Middleware kann keine node:crypto-Prüfung ausführen).
+        path === "/api/diagnostics" ||
+        path === "/api/notifications";
       if (isPublic) return true;
       return !!auth?.user;
     },

@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { getCashflowMatrix, getKpis, type CashflowCatRow, type CashflowMonth } from "@/lib/analytics";
+import { getForecast } from "@/lib/queries";
+import { getPlanningSettings, findThresholdBreach } from "@/lib/planning";
 import { formatCents } from "@/lib/money";
 import { CashflowChart } from "@/components/cashflow-chart";
 
@@ -81,24 +83,26 @@ function SummaryRow({
   months,
   strong,
   tone,
+  muted,
 }: {
   label: string;
   values: number[];
   months: CashflowMonth[];
   strong?: boolean;
   tone?: "in" | "out";
+  muted?: boolean;
 }) {
   return (
     <tr className={strong ? "bg-slate-50" : ""}>
-      <td className={`sticky left-0 z-10 px-3 py-1.5 text-sm ${strong ? "bg-slate-50 font-semibold text-slate-800" : "bg-white text-slate-600"}`}>
+      <td className={`sticky left-0 z-10 px-3 py-1.5 text-sm ${strong ? "bg-slate-50 font-semibold text-slate-800" : muted ? "bg-white pl-6 italic text-slate-400" : "bg-white text-slate-600"}`}>
         {label}
       </td>
       {values.map((v, i) => (
         <td
           key={months[i].key}
-          className={`whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${strong ? "font-semibold" : ""} ${v < 0 ? "text-red-600" : tone === "in" ? "text-emerald-700" : "text-slate-800"} ${months[i].isCurrent ? "bg-brand/10" : strong ? "bg-slate-50" : ""}`}
+          className={`whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${strong ? "font-semibold" : ""} ${muted ? "italic opacity-70" : ""} ${v < 0 ? "text-red-600" : tone === "in" ? "text-emerald-700" : "text-slate-800"} ${months[i].isCurrent ? "bg-brand/10" : strong ? "bg-slate-50" : ""}`}
         >
-          {eur(v)}
+          {v === 0 ? <span className="text-slate-300">–</span> : eur(v)}
         </td>
       ))}
     </tr>
@@ -106,8 +110,14 @@ function SummaryRow({
 }
 
 export default async function DashboardPage() {
-  const [kpis, matrix] = await Promise.all([getKpis(), getCashflowMatrix(6, 6)]);
+  const [kpis, matrix, forecast, planning] = await Promise.all([
+    getKpis(),
+    getCashflowMatrix(6, 6),
+    getForecast(180),
+    getPlanningSettings(),
+  ]);
   const { months } = matrix;
+  const breach = findThresholdBreach(forecast, planning.minLiquidityCents);
 
   const lowestFuture = months
     .filter((m) => m.isFuture || m.isCurrent)
@@ -149,8 +159,41 @@ export default async function DashboardPage() {
         </div>
       )}
 
+      {breach && (
+        <div className="card flex items-start gap-3 border-amber-200 bg-amber-50">
+          <span className="text-xl">🔔</span>
+          <div className="text-sm text-amber-800">
+            <strong>Mindestliquidität unterschritten:</strong> Am{" "}
+            {new Date(breach.date).toLocaleDateString("de-DE")} ({breach.daysAway} Tage) fällt die
+            Prognose auf {formatCents(breach.balance)} — unter deine Schwelle von{" "}
+            {formatCents(breach.threshold)}.{" "}
+            <Link href="/forecast" className="underline">13-Wochen-Vorschau →</Link>
+          </div>
+        </div>
+      )}
+
       <div className="card">
-        <CashflowChart points={months.map((m) => ({ label: m.label, inflow: m.inflow, outflow: m.outflow, endLiquidity: m.endLiquidity, isFuture: m.isFuture, isCurrent: m.isCurrent }))} />
+        <CashflowChart
+          points={months.map((m) => ({
+            label: m.label,
+            inflow: m.inflow,
+            outflow: m.outflow,
+            inflowRealized: m.inflowRealized,
+            inflowPlanned: m.inflowPlanned,
+            outflowRealized: m.outflowRealized,
+            outflowPlanned: m.outflowPlanned,
+            endLiquidity: m.endLiquidity,
+            isFuture: m.isFuture,
+            isCurrent: m.isCurrent,
+          }))}
+          thresholdCents={planning.minLiquidityCents}
+        />
+        <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Einzahlung realisiert</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-300" /> Einzahlung geplant</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" /> Auszahlung realisiert</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-300" /> Auszahlung geplant</span>
+        </div>
       </div>
 
       <div className="card overflow-x-auto p-0">
@@ -173,7 +216,11 @@ export default async function DashboardPage() {
           <tbody>
             <SummaryRow label="Liquidität Start" values={months.map((m) => m.startLiquidity)} months={months} />
             <SummaryRow label="Einzahlungen" values={months.map((m) => m.inflow)} months={months} tone="in" />
+            <SummaryRow label="· realisiert" values={months.map((m) => m.inflowRealized)} months={months} tone="in" muted />
+            <SummaryRow label="· geplant" values={months.map((m) => m.inflowPlanned)} months={months} tone="in" muted />
             <SummaryRow label="Auszahlungen" values={months.map((m) => -m.outflow)} months={months} />
+            <SummaryRow label="· realisiert" values={months.map((m) => -m.outflowRealized)} months={months} muted />
+            <SummaryRow label="· geplant" values={months.map((m) => -m.outflowPlanned)} months={months} muted />
             <SummaryRow label="Nettoveränderung" values={months.map((m) => m.net)} months={months} />
             <SummaryRow label="Liquidität Ende" values={months.map((m) => m.endLiquidity)} months={months} strong />
 

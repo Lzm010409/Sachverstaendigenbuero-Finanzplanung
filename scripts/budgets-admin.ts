@@ -118,7 +118,54 @@ async function importBudgets(raw: string) {
   console.log(`\nImport fertig: ${created} angelegt, ${skipped} übersprungen.\n`);
 }
 
+interface RecatInput {
+  createCategories?: { name: string; kind: Kind; color?: string }[];
+  assign?: { title: string; kind: Kind; categoryName: string }[];
+}
+
+// Kategorien anlegen (falls fehlend) und Budgets per (Titel, Art) umhängen.
+async function recategorize(raw: string) {
+  let input: RecatInput;
+  try {
+    input = JSON.parse(raw);
+  } catch (e) {
+    console.error("BUDGETS_RECAT ist kein gültiges JSON:", (e as Error).message);
+    return;
+  }
+
+  for (const c of input.createCategories ?? []) {
+    const existing = await prisma.category.findFirst({ where: { name: c.name, deletedAt: null } });
+    if (existing) {
+      console.log(`Kategorie vorhanden: ${c.name}`);
+      continue;
+    }
+    await prisma.category.create({ data: { name: c.name, kind: c.kind, color: c.color ?? "#64748b" } });
+    console.log(`Kategorie angelegt: [${c.kind}] ${c.name}`);
+  }
+
+  const cats = await prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, name: true } });
+  const catByName = new Map(cats.map((c) => [c.name.trim().toLowerCase(), c.id]));
+
+  for (const a of input.assign ?? []) {
+    const categoryId = catByName.get(a.categoryName.trim().toLowerCase());
+    if (!categoryId) {
+      console.warn(`Kategorie „${a.categoryName}" nicht gefunden – ${a.title} unverändert.`);
+      continue;
+    }
+    const res = await prisma.budget.updateMany({
+      where: { title: a.title, kind: a.kind, deletedAt: null },
+      data: { categoryId },
+    });
+    console.log(`umgehängt: ${a.title} -> ${a.categoryName} (${res.count} Budget[s])`);
+  }
+}
+
 async function main() {
+  const recatB64 = process.env.BUDGETS_RECAT_B64;
+  if (recatB64 && recatB64.trim()) {
+    await recategorize(Buffer.from(recatB64.trim(), "base64").toString("utf8"));
+  }
+
   // Import-JSON entweder direkt (BUDGETS_IMPORT) oder base64-kodiert
   // (BUDGETS_IMPORT_B64, umgeht Quoting-Probleme beim Env-Transport).
   let raw = process.env.BUDGETS_IMPORT;

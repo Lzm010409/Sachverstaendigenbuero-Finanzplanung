@@ -152,7 +152,6 @@ model Transaction {
   category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   // Deduplizierung beim Import: Hash aus Konto+Datum+Betrag+Zweck+Gegenpartei
   importHash   String    @unique
-  raw          String? // Original-Zeile/-Feld zur Nachvollziehbarkeit
   createdAt    DateTime  @default(now())
 
   @@index([accountId, bookingDate])

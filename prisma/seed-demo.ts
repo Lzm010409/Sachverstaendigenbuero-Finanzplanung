@@ -156,7 +156,6 @@ async function main() {
         purpose: t.purpose,
         categoryId: cat[t.category] ?? null,
         importHash: `demo-${giro.id}-${i++}`,
-        raw: "Demo-Datensatz",
       },
     });
   }

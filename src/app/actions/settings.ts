@@ -103,8 +103,8 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
         bookingDate: t.date,
         valueDate: t.date,
         amount: t.amountCents,
-        counterparty: t.counterparty,
-        purpose: t.purpose,
+        counterparty: t.counterparty.length > 120 ? t.counterparty.slice(0, 120) : t.counterparty,
+        purpose: t.purpose.length > 180 ? t.purpose.slice(0, 180) : t.purpose,
       };
       const categoryId = categorize(tx, rules);
       if (categoryId) categorized++;
@@ -113,12 +113,14 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
         ...tx,
         categoryId,
         importHash: `sevdesk-${t.externalId}`,
-        raw: "sevDesk-Sync",
       };
     });
 
-    const res = await prisma.transaction.createMany({ data, skipDuplicates: true });
-    imported += res.count;
+    // In Blöcken einfügen (speicher-/WAL-schonend); Duplikate via Unique-Index.
+    for (let i = 0; i < data.length; i += 500) {
+      const res = await prisma.transaction.createMany({ data: data.slice(i, i + 500), skipDuplicates: true });
+      imported += res.count;
+    }
 
     // Kontostand mit sevDesk abgleichen: Anfangssaldo so setzen, dass der
     // angezeigte Saldo exakt dem sevDesk-Kontostand entspricht.
@@ -132,7 +134,11 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
         where: { accountId: account.id, bookingDate: { gte: account.openingDate } },
       });
       const openingBalance = balanceCents - (sum._sum.amount ?? 0);
-      await prisma.account.update({ where: { id: account.id }, data: { openingBalance } });
+      // Nur schreiben, wenn sich der Wert wirklich ändert (vermeidet unnötige
+      // Zeilen-Neuschreibungen/DB-Bloat bei wiederholten Syncs).
+      if (openingBalance !== account.openingBalance) {
+        await prisma.account.update({ where: { id: account.id }, data: { openingBalance } });
+      }
       reconciled++;
     }
   }
@@ -174,43 +180,52 @@ export async function syncSevdeskDocuments(): Promise<SevdeskDocsResult> {
     return { error: `Beleg-Sync fehlgeschlagen: ${(e as Error).message}` };
   }
 
+  // Vorhandene sevDesk-Posten einmal laden, um nur GEÄNDERTE Zeilen zu
+  // schreiben (vermeidet unnötige Zeilen-Neuschreibungen/DB-Bloat bei
+  // wiederholten Syncs).
+  const existingItems = await prisma.openItem.findMany({
+    where: { source: { in: ["sevdesk-invoice", "sevdesk-voucher"] } },
+    select: { id: true, source: true, externalId: true, kind: true, counterparty: true, reference: true, amount: true, paidAmount: true, dueDate: true, paid: true },
+  });
+  const byKey = new Map(existingItems.map((e) => [`${e.source}:${e.externalId}`, e]));
+
   const seen = new Set<string>();
   let receivables = 0;
   let payables = 0;
   for (const it of items) {
-    seen.add(`${it.source}:${it.externalId}`);
-    await prisma.openItem.upsert({
-      where: { source_externalId: { source: it.source, externalId: it.externalId } },
-      create: {
-        kind: it.kind,
-        counterparty: it.counterparty,
-        reference: it.reference,
-        amount: it.amountCents,
-        paidAmount: it.paidAmountCents,
-        dueDate: it.dueDate,
-        externalId: it.externalId,
-        source: it.source,
-        note: "sevDesk",
-      },
-      update: {
-        kind: it.kind,
-        counterparty: it.counterparty,
-        reference: it.reference,
-        amount: it.amountCents,
-        paidAmount: it.paidAmountCents,
-        dueDate: it.dueDate,
-        paid: false,
-      },
-    });
+    const key = `${it.source}:${it.externalId}`;
+    seen.add(key);
+    const clipped = it.counterparty.length > 160 ? it.counterparty.slice(0, 160) : it.counterparty;
+    const cur = byKey.get(key);
+    if (!cur) {
+      await prisma.openItem.create({
+        data: {
+          kind: it.kind, counterparty: clipped, reference: it.reference,
+          amount: it.amountCents, paidAmount: it.paidAmountCents, dueDate: it.dueDate,
+          externalId: it.externalId, source: it.source, note: "sevDesk",
+        },
+      });
+    } else {
+      const changed =
+        cur.kind !== it.kind || cur.counterparty !== clipped || cur.reference !== it.reference ||
+        cur.amount !== it.amountCents || cur.paidAmount !== it.paidAmountCents ||
+        cur.dueDate.getTime() !== it.dueDate.getTime() || cur.paid;
+      if (changed) {
+        await prisma.openItem.update({
+          where: { id: cur.id },
+          data: {
+            kind: it.kind, counterparty: clipped, reference: it.reference,
+            amount: it.amountCents, paidAmount: it.paidAmountCents, dueDate: it.dueDate, paid: false,
+          },
+        });
+      }
+    }
     if (it.kind === "RECEIVABLE") receivables++;
     else payables++;
   }
 
   // Nicht mehr offene sevDesk-Posten als bezahlt markieren.
-  const existing = await prisma.openItem.findMany({
-    where: { source: { in: ["sevdesk-invoice", "sevdesk-voucher"] }, paid: false },
-    select: { id: true, source: true, externalId: true },
-  });
+  const existing = existingItems.filter((e) => !e.paid);
   const toClose = existing
     .filter((e) => !seen.has(`${e.source}:${e.externalId}`))
     .map((e) => e.id);

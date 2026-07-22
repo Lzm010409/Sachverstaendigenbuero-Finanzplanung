@@ -129,7 +129,6 @@ export async function importFinban(formData: FormData): Promise<FinbanImportSumm
           ...tx,
           categoryId: catId,
           importHash: hash,
-          raw: "finban-Import",
         },
       });
       transactions++;

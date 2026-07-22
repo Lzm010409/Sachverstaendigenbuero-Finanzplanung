@@ -4,6 +4,7 @@ import { ApplyRulesButton, CategoryForm, ResetCategoriesButton, RuleForm, type C
 import { RuleRow } from "./rule-row";
 import { BudgetInput } from "./budget-input";
 import { ConfirmSubmit } from "@/components/confirm-submit";
+import { annualToPeriodCents, type BudgetPeriod } from "@/lib/budget";
 
 function budgetToInput(cents: number): string {
   return cents > 0 ? (cents / 100).toFixed(2).replace(".", ",") : "";
@@ -19,6 +20,7 @@ type CatRow = {
   kind: "INCOME" | "EXPENSE";
   color: string;
   annualBudget: number;
+  budgetPeriod: BudgetPeriod;
   _count: { transactions: number };
 };
 
@@ -37,7 +39,7 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
               <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
                 <th className="th">Kategorie</th>
                 <th className="th text-right">Umsätze</th>
-                <th className="th text-right">Jahresbudget</th>
+                <th className="th text-right">Budget / Rhythmus</th>
                 <th className="th"></th>
               </tr>
             </thead>
@@ -50,7 +52,11 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
                   </td>
                   <td className="td text-right text-slate-500">{c._count.transactions}</td>
                   <td className="td text-right">
-                    <BudgetInput id={c.id} initial={budgetToInput(c.annualBudget)} />
+                    <BudgetInput
+                      id={c.id}
+                      initialAmount={budgetToInput(annualToPeriodCents(c.annualBudget, c.budgetPeriod))}
+                      initialPeriod={c.budgetPeriod}
+                    />
                   </td>
                   <td className="td text-right">
                     <form action={deleteCategory}>

@@ -23,6 +23,15 @@ enum CategoryKind {
   EXPENSE
 }
 
+// Rhythmus, in dem ein Kategorie-Budget erfasst/angezeigt wird. Intern bleibt
+// der Jahreswert (annualBudget) die Normalisierung.
+enum BudgetPeriod {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
 enum Recurrence {
   ONCE
   WEEKLY
@@ -105,8 +114,10 @@ model Category {
   name         String
   kind         CategoryKind
   color        String        @default("#64748b")
-  // Jahresbudget in Cent (Betrag, positiv). Monats-/Wochenwerte = /12 bzw. /52.
+  // Jahresbudget in Cent (Betrag, positiv) – interne Normalisierung.
+  // Erfasst/angezeigt wird es im gewählten Rhythmus (budgetPeriod).
   annualBudget Int           @default(0)
+  budgetPeriod BudgetPeriod  @default(MONTHLY)
   parentId     String?
   parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children     Category[]    @relation("CategoryTree")

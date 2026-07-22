@@ -19,10 +19,13 @@ export interface Categorizable {
 
 function toMatcher(pattern: string): (value: string) => boolean {
   const p = pattern.trim();
-  const re = /^\/(.+)\/([a-z]*)$/i.exec(p);
+  const re = /^\/(.+)\/([a-zA-Z]*)$/.exec(p);
   if (re) {
     try {
-      const rx = new RegExp(re[1], re[2].includes("i") ? re[2] : re[2] + "i");
+      // Flags normalisieren (klein) und "i" immer erzwingen -> Regeln sind
+      // grundsätzlich case-insensitiv; doppelte Flags werden entfernt.
+      const flags = Array.from(new Set((re[2].toLowerCase() + "i").split(""))).join("");
+      const rx = new RegExp(re[1], flags);
       return (value) => rx.test(value);
     } catch {
       // ungültige Regex -> als Teilstring behandeln

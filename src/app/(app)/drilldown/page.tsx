@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { INCLUDED_ACCOUNT, getAccountsWithBalance, getTotalBalanceCents } from "@/lib/queries";
 import { getKpis } from "@/lib/analytics";
 import { occurrencesBetween } from "@/lib/recurrence";
+import { getAnomalyDetail } from "@/lib/anomalies";
 import { addMonths, isoDate, startOfDayUTC, todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
 import { Pagination } from "@/components/pagination";
@@ -20,7 +21,8 @@ type Metric =
   | "workingCapital"
   | "receivables"
   | "payables"
-  | "range";
+  | "range"
+  | "anomaly";
 
 const TITLES: Record<Metric, string> = {
   balance: "Verfügbare Liquidität",
@@ -31,6 +33,7 @@ const TITLES: Record<Metric, string> = {
   receivables: "Offene Forderungen",
   payables: "Offene Verbindlichkeiten",
   range: "Bewegungen im Zeitraum",
+  anomaly: "Auffälligkeit",
 };
 
 function Header({ title, total, sub }: { title: string; total?: number; sub?: string }) {
@@ -362,10 +365,59 @@ async function RangeDrill({ from, to }: { from: string; to: string }) {
   );
 }
 
+async function AnomalyDrill({ dkey }: { dkey: string }) {
+  const detail = await getAnomalyDetail(dkey);
+  const total = detail.rows.reduce((s, r) => s + (r.amount ?? 0), 0);
+  const hasAmounts = detail.rows.some((r) => r.amount != null);
+  return (
+    <div className="space-y-6">
+      <Header title={detail.title} total={hasAmounts ? total : undefined} sub={`${detail.rows.length} betroffene Positionen`} />
+      {detail.note && <p className="-mt-3 text-sm text-slate-500">{detail.note}</p>}
+      {detail.pageHref && (
+        <p className="-mt-3 text-sm">
+          <Link href={detail.pageHref} className="text-brand underline">{detail.pageLabel ?? "Seite öffnen"} →</Link>
+        </p>
+      )}
+      <div className="card overflow-x-auto">
+        {detail.rows.length === 0 ? (
+          <p className="text-sm text-slate-400">Aktuell keine betroffenen Objekte.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                <th className="th">Position</th>
+                <th className="th">Datum</th>
+                <th className="th text-right">Betrag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.rows.map((r, i) => (
+                <tr key={i} className="border-b border-slate-50">
+                  <td className="td">
+                    <div className="font-medium text-slate-700">{r.label}</div>
+                    {r.sub && <div className="text-xs text-slate-400">{r.sub}</div>}
+                  </td>
+                  <td className="td whitespace-nowrap text-slate-500">
+                    {r.date ? new Date(r.date).toLocaleDateString("de-DE") : "—"}
+                    {r.badge && <span className="ml-2 badge bg-amber-100 text-amber-700">{r.badge}</span>}
+                  </td>
+                  <td className={`td text-right font-semibold tabular-nums ${r.amount != null && r.amount < 0 ? "text-red-600" : "text-slate-800"}`}>
+                    {r.amount != null ? formatCents(r.amount) : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default async function DrilldownPage({
   searchParams,
 }: {
-  searchParams: Promise<{ metric?: string; page?: string; from?: string; to?: string }>;
+  searchParams: Promise<{ metric?: string; page?: string; from?: string; to?: string; key?: string }>;
 }) {
   const sp = await searchParams;
   const metric = (sp.metric ?? "balance") as Metric;
@@ -374,6 +426,9 @@ export default async function DrilldownPage({
   switch (metric) {
     case "range":
       if (sp.from && sp.to) return <RangeDrill from={sp.from} to={sp.to} />;
+      break;
+    case "anomaly":
+      if (sp.key) return <AnomalyDrill dkey={sp.key} />;
       break;
   }
 

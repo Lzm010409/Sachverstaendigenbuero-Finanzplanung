@@ -13,6 +13,7 @@ export interface Alert {
   level: AlertLevel;
   title: string;
   detail: string;
+  href?: string;
 }
 
 export interface Digest {
@@ -62,6 +63,7 @@ export async function buildDigest(): Promise<Digest> {
     level: a.level === "error" ? "critical" : a.level,
     title: a.title,
     detail: a.detail,
+    href: a.href,
   }));
   if (alerts.length === 0) {
     alerts.push({ level: "info", title: "Alles im grünen Bereich", detail: "Keine Auffälligkeiten erkannt." });
@@ -104,11 +106,14 @@ const de = (c: number) => formatCents(c);
 const deDate = (iso: string) => new Date(iso).toLocaleDateString("de-DE");
 
 export function digestToHtml(d: Digest): string {
+  const appUrl = process.env.APP_URL || "https://finance.gollenstede.app";
   const alertRows = d.alerts
     .map(
       (a) =>
         `<tr><td style="padding:8px 12px;border-left:4px solid ${COLOR[a.level]};background:#f8fafc">` +
-        `<strong style="color:${COLOR[a.level]}">${a.title}</strong><br><span style="color:#475569">${a.detail}</span></td></tr>`,
+        `<strong style="color:${COLOR[a.level]}">${a.title}</strong><br><span style="color:#475569">${a.detail}</span>` +
+        (a.href ? ` <a href="${appUrl}${a.href}" style="color:${COLOR[a.level]};font-size:12px">→ betroffene Objekte</a>` : "") +
+        `</td></tr>`,
     )
     .join("");
 

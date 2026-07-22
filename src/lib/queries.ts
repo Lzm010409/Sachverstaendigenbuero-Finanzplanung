@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "./db";
 import {
   buildForecast,
@@ -13,10 +14,10 @@ import { addMonths, startOfDayUTC, todayUTC } from "./dates";
  * Konvention: Anfangssaldo = Kontostand zum openingDate; danach werden alle
  * importierten Umsätze aufaddiert.
  */
-export async function getTotalBalanceCents(): Promise<number> {
+export const getTotalBalanceCents = cache(async (): Promise<number> => {
   const accounts = await getAccountsWithBalance();
   return accounts.filter((a) => !a.excludedFromCalc).reduce((s, a) => s + a.currentBalance, 0);
-}
+});
 
 // Where-Fragment für Transaktionen, die in Berechnungen einfließen sollen
 // (nur nicht-archivierte, nicht-ausgeschlossene Konten).
@@ -34,35 +35,35 @@ export interface AccountWithBalance {
   excludedFromCalc: boolean;
 }
 
-export async function getAccountsWithBalance(): Promise<AccountWithBalance[]> {
+export const getAccountsWithBalance = cache(async (): Promise<AccountWithBalance[]> => {
   const accounts = await prisma.account.findMany({
     where: { archived: false },
     orderBy: { createdAt: "asc" },
-    include: {
-      _count: { select: { transactions: true } },
-      transactions: { select: { amount: true, bookingDate: true } },
-    },
+    include: { _count: { select: { transactions: true } } },
   });
-  return accounts.map((a) => {
-    // Nur Transaktionen ab dem Stichtag zählen – alles davor steckt bereits
-    // im Anfangssaldo.
-    const since = a.openingBalance;
-    const movement = a.transactions
-      .filter((t) => t.bookingDate.getTime() >= a.openingDate.getTime())
-      .reduce((s, t) => s + t.amount, 0);
-    return {
-      id: a.id,
-      name: a.name,
-      type: a.type,
-      iban: a.iban,
-      openingBalance: a.openingBalance,
-      openingDate: a.openingDate,
-      currentBalance: since + movement,
-      txCount: a._count.transactions,
-      excludedFromCalc: a.excludedFromCalc,
-    };
-  });
-}
+  // Bewegung je Konto per DB-Aggregat (nur Umsätze ab dem Stichtag) – statt
+  // alle Transaktionen in den Speicher zu laden. Nutzt den Index [accountId,
+  // bookingDate].
+  const sums = await Promise.all(
+    accounts.map((a) =>
+      prisma.transaction.aggregate({
+        _sum: { amount: true },
+        where: { accountId: a.id, bookingDate: { gte: a.openingDate } },
+      }),
+    ),
+  );
+  return accounts.map((a, i) => ({
+    id: a.id,
+    name: a.name,
+    type: a.type,
+    iban: a.iban,
+    openingBalance: a.openingBalance,
+    openingDate: a.openingDate,
+    currentBalance: a.openingBalance + (sums[i]._sum.amount ?? 0),
+    txCount: a._count.transactions,
+    excludedFromCalc: a.excludedFromCalc,
+  }));
+});
 
 /** Offene (unbezahlte) Posten als datumsgenaue Einmal-Zahlungen für den Forecast. */
 export async function getOpenItemOneOffs(): Promise<ForecastOneOff[]> {
@@ -99,7 +100,7 @@ export async function getScenarioConfig(scenarioId?: string): Promise<ScenarioCo
 }
 
 /** Baut die Liquiditätsvorschau über einen Horizont (Tage) aus den DB-Daten. */
-export async function getForecast(horizonDays = 90, scenarioId?: string): Promise<ForecastResult> {
+export const getForecast = cache(async (horizonDays = 90, scenarioId?: string): Promise<ForecastResult> => {
   const [startBalance, planned, oneOffs, scenario] = await Promise.all([
     getTotalBalanceCents(),
     prisma.plannedItem.findMany({ where: { active: true } }),
@@ -124,7 +125,7 @@ export async function getForecast(horizonDays = 90, scenarioId?: string): Promis
       categoryId: p.categoryId,
     })),
   });
-}
+});
 
 export interface PlanActualRow {
   categoryId: string | null;

@@ -27,10 +27,15 @@ export default async function NotificationsPage() {
         {digest.alerts.map((a, i) => (
           <div key={i} className={`card flex items-start gap-3 border ${STYLE[a.level]}`}>
             <span className="text-xl">{ICON[a.level]}</span>
-            <div className="text-sm">
+            <div className="flex-1 text-sm">
               <strong>{a.title}</strong>
               <div>{a.detail}</div>
             </div>
+            {a.href && (
+              <Link href={a.href} className="whitespace-nowrap text-xs underline opacity-80 hover:opacity-100">
+                betroffene Objekte →
+              </Link>
+            )}
           </div>
         ))}
       </div>

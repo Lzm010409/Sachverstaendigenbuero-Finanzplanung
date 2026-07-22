@@ -284,7 +284,113 @@ const PAGE_DETECTORS: Record<string, (() => Promise<Anomaly[]>)[]> = {
 function dedupeSort(items: Anomaly[]): Anomaly[] {
   const byKey = new Map<string, Anomaly>();
   for (const a of items) if (!byKey.has(a.key)) byKey.set(a.key, a);
-  return [...byKey.values()].sort((a, b) => RANK[b.level] - RANK[a.level]);
+  // Jede Meldung verlinkt auf ihren Objekt-Drilldown (betroffene Datensätze).
+  return [...byKey.values()]
+    .map((a) => ({ ...a, href: `/drilldown?metric=anomaly&key=${encodeURIComponent(a.key)}` }))
+    .sort((a, b) => RANK[b.level] - RANK[a.level]);
+}
+
+// --- Drilldown: betroffene Objekte je Anomalie ----------------------------
+
+export interface AnomalyDetailRow {
+  label: string;
+  sub?: string;
+  date?: string;
+  amount?: number;
+  badge?: string;
+}
+export interface AnomalyDetail {
+  title: string;
+  note?: string;
+  rows: AnomalyDetailRow[];
+  pageHref?: string;
+  pageLabel?: string;
+}
+
+const LIMIT = 200;
+
+/** Liefert die konkreten Datensätze hinter einer Anomalie (für den Drilldown). */
+export async function getAnomalyDetail(key: string): Promise<AnomalyDetail> {
+  const today = todayUTC();
+  const base = key.split(".").slice(0, 2).join(".");
+  const openOf = (i: { amount: number; paidAmount: number }) => Math.max(0, i.amount - i.paidAmount);
+
+  const txRows = (ts: { counterparty: string; purpose: string; amount: number; bookingDate: Date; category?: { name: string } | null; account?: { name: string } | null }[]): AnomalyDetailRow[] =>
+    ts.map((t) => ({
+      label: t.counterparty || t.purpose || "Umsatz",
+      sub: [t.category?.name, t.account?.name].filter(Boolean).join(" · ") || t.purpose || undefined,
+      date: t.bookingDate.toISOString().slice(0, 10),
+      amount: t.amount,
+    }));
+
+  if (base === "tx.uncategorized") {
+    const ts = await prisma.transaction.findMany({ where: { account: INCLUDED_ACCOUNT, categoryId: null }, orderBy: { bookingDate: "desc" }, take: LIMIT, include: { account: true } });
+    return { title: "Nicht kategorisierte Umsätze", rows: txRows(ts), pageHref: "/transactions?state=uncategorized", pageLabel: "In Umsätzen filtern" };
+  }
+  if (base === "tx.zero") {
+    const ts = await prisma.transaction.findMany({ where: { account: INCLUDED_ACCOUNT, amount: 0 }, orderBy: { bookingDate: "desc" }, take: LIMIT, include: { account: true } });
+    return { title: "Umsätze mit Betrag 0", rows: txRows(ts) };
+  }
+  if (base === "tx.future") {
+    const ts = await prisma.transaction.findMany({ where: { account: INCLUDED_ACCOUNT, bookingDate: { gt: today } }, orderBy: { bookingDate: "asc" }, take: LIMIT, include: { account: true } });
+    return { title: "Zukünftig datierte Buchungen", rows: txRows(ts) };
+  }
+  if (base === "tx.outlier" || base === "tx.dup") {
+    const from = new Date(today); from.setUTCMonth(from.getUTCMonth() - 3);
+    const recent = await prisma.transaction.findMany({ where: { account: INCLUDED_ACCOUNT, bookingDate: { gte: from } }, include: { account: true, category: true } });
+    if (base === "tx.outlier") {
+      const amts = recent.map((t) => Math.abs(t.amount));
+      const mean = amts.reduce((a, b) => a + b, 0) / (amts.length || 1);
+      const sd = Math.sqrt(amts.reduce((s, a) => s + (a - mean) ** 2, 0) / (amts.length || 1));
+      const outliers = recent.filter((t) => Math.abs(t.amount) > mean + 4 * sd).sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+      return { title: "Ungewöhnlich große Buchungen (3 Monate)", note: `Schwelle: > ${formatCents(Math.round(mean + 4 * sd))}`, rows: txRows(outliers) };
+    }
+    const groups = new Map<string, typeof recent>();
+    for (const t of recent) {
+      const k = `${t.counterparty}|${t.amount}|${t.bookingDate.toISOString().slice(0, 10)}`;
+      groups.set(k, [...(groups.get(k) ?? []), t]);
+    }
+    const dups = [...groups.values()].filter((g) => g.length > 1).flat().sort((a, b) => b.bookingDate.getTime() - a.bookingDate.getTime());
+    return { title: "Mögliche Doppelbuchungen (3 Monate)", note: "Gleiche Gegenpartei, Betrag und Datum.", rows: txRows(dups) };
+  }
+  if (base === "recv.over90" || base === "recv.overdue" || base === "recv.singleLarge") {
+    const items = await prisma.openItem.findMany({ where: { kind: "RECEIVABLE", paid: false, dueDate: { lt: today } }, orderBy: { dueDate: "asc" } });
+    let filtered = items.filter((i) => openOf(i) > 0);
+    if (base === "recv.over90") filtered = filtered.filter((i) => (today.getTime() - new Date(i.dueDate).getTime()) / 86400000 > 90);
+    if (base === "recv.singleLarge") filtered = filtered.sort((a, b) => openOf(b) - openOf(a));
+    const rows: AnomalyDetailRow[] = filtered.slice(0, LIMIT).map((i) => {
+      const days = Math.floor((today.getTime() - new Date(i.dueDate).getTime()) / 86400000);
+      return { label: i.counterparty || "Forderung", sub: i.reference ?? undefined, date: new Date(i.dueDate).toISOString().slice(0, 10), amount: openOf(i), badge: `${days} T überfällig` };
+    });
+    return { title: base === "recv.over90" ? "Forderungen über 90 Tage überfällig" : "Überfällige Forderungen", rows, pageHref: "/open-items?kind=RECEIVABLE&status=overdue", pageLabel: "In Offene Posten öffnen" };
+  }
+  if (base === "acc.negative" || base === "acc.empty") {
+    const accts = await getAccountsWithBalance();
+    const rows = accts
+      .filter((a) => !a.excludedFromCalc && (base === "acc.negative" ? a.currentBalance < 0 : a.txCount === 0))
+      .map((a) => ({ label: a.name, sub: `${a.txCount} Umsätze`, amount: a.currentBalance }));
+    return { title: base === "acc.negative" ? "Konten mit negativem Saldo" : "Konten ohne Umsätze", rows, pageHref: "/accounts", pageLabel: "Zu Konten" };
+  }
+  if (base === "conc.top1") {
+    const c = await getConcentration(12);
+    const rows = c.debtors.map((d) => ({ label: d.name, sub: `${(d.share * 100).toFixed(1)} % der Erlöse`, amount: d.revenue }));
+    return { title: "Auftraggeber nach Erlösanteil (12 Monate)", rows, pageHref: "/concentration", pageLabel: "Zur Klumpenrisiko-Analyse" };
+  }
+  if (base === "budget.over") {
+    const b = await getCategoryBreakdown("month");
+    const rows = [...b.incomeRows, ...b.expenseRows]
+      .filter((r) => r.budgetPct != null && r.budgetPct > 1)
+      .sort((a, b2) => (b2.budgetPct ?? 0) - (a.budgetPct ?? 0))
+      .map((r) => ({ label: r.name, sub: `${Math.round((r.budgetPct ?? 0) * 100)} % des Jahresbudgets`, amount: r.yearActual }));
+    return { title: "Kategorien über Jahresbudget", rows, pageHref: "/breakdown", pageLabel: "Zur Auswertung" };
+  }
+  if (base === "tax.due") {
+    const vat = await getVatForecast(0, 2);
+    const rows = vat.periods.map((p) => ({ label: p.label, sub: p.isEstimate ? "Schätzung" : "fällig " + new Date(p.dueDate).toLocaleDateString("de-DE"), amount: p.vatPayable }));
+    return { title: "USt-Zahllast je Zeitraum", rows, pageHref: "/tax", pageLabel: "Zur Steuer-Vorschau" };
+  }
+  // Forecast-Meldungen: Verweis auf die Vorschau.
+  return { title: "Details", rows: [], pageHref: "/forecast", pageLabel: "Zur 13-Wochen-Vorschau" };
 }
 
 /** Anomalien für eine bestimmte Seite (nur relevante Detektoren laufen). */

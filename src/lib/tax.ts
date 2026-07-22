@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "./db";
 import { INCLUDED_ACCOUNT } from "./queries";
 import { getPlanningSettings } from "./planning";
@@ -25,12 +26,12 @@ const monthKey = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 
  * (nur Belege/Rechnungen in EUR mit MwSt > 0); ohne Token wird aus den gebuchten
  * Umsätzen bei einheitlichem Satz geschätzt. Standard-Zyklus: monatlich.
  */
-export async function getVatForecast(periodsBack = 2, periodsForward = 2): Promise<{
+export const getVatForecast = cache(async (periodsBack = 2, periodsForward = 2): Promise<{
   ratePercent: number;
   cycle: "monthly" | "quarterly";
   source: "sevdesk" | "geschätzt";
   periods: VatPeriod[];
-}> {
+}> => {
   const { vatRatePercent, vatCycle } = await getPlanningSettings();
   const today = todayUTC();
   const stepMonths = vatCycle === "monthly" ? 1 : 3;
@@ -103,4 +104,4 @@ export async function getVatForecast(periodsBack = 2, periodsForward = 2): Promi
     });
   }
   return { ratePercent: vatRatePercent, cycle: vatCycle, source: vat ? "sevdesk" : "geschätzt", periods };
-}
+});

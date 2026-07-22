@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { prisma } from "./db";
 import { todayUTC } from "./dates";
 
@@ -23,7 +24,7 @@ const openOf = (i: { amount: number; paidAmount: number }) => Math.max(0, i.amou
  * Alterstruktur der offenen Forderungen + DSO.
  * DSO wird aus bezahlten Forderungen geschätzt (Ausstellung -> Zahldatum).
  */
-export async function getReceivablesReport(): Promise<ReceivablesReport> {
+export const getReceivablesReport = cache(async (): Promise<ReceivablesReport> => {
   const today = todayUTC();
   const [openItems, paid] = await Promise.all([
     prisma.openItem.findMany({
@@ -72,7 +73,7 @@ export async function getReceivablesReport(): Promise<ReceivablesReport> {
   }
 
   return { buckets, totalOpen, overdueOpen, count: openItems.length, dsoDays };
-}
+});
 
 export const REMINDER_LABELS = ["keine", "Zahlungserinnerung", "1. Mahnung", "2. Mahnung / Inkasso"] as const;
 

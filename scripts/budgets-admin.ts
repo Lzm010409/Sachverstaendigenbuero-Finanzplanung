@@ -36,6 +36,17 @@ function parseDate(s?: string): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
+async function listCategories() {
+  const cats = await prisma.category.findMany({
+    where: { deletedAt: null },
+    orderBy: [{ kind: "asc" }, { name: "asc" }],
+    select: { name: true, kind: true },
+  });
+  console.log(`\n=== Kategorien: ${cats.length} ===`);
+  for (const c of cats) console.log(`- [${c.kind}] ${c.name}`);
+  console.log("=== Ende Kategorien ===\n");
+}
+
 async function list() {
   const budgets = await prisma.budget.findMany({
     orderBy: [{ deletedAt: "asc" }, { kind: "asc" }, { title: "asc" }],
@@ -113,6 +124,7 @@ async function main() {
     await importBudgets(raw);
   }
   // Nach dem Import (oder ohne Import) immer den aktuellen Stand ausgeben.
+  await listCategories();
   await list();
 }
 

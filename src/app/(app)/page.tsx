@@ -15,11 +15,13 @@ function Stat({
   value,
   tone = "default",
   hint,
+  href,
 }: {
   label: string;
   value: string;
   tone?: "default" | "positive" | "negative" | "warning";
   hint?: string;
+  href?: string;
 }) {
   const toneClass =
     tone === "negative"
@@ -29,13 +31,22 @@ function Stat({
         : tone === "warning"
           ? "text-amber-600"
           : "text-slate-900";
-  return (
-    <div className="card">
+  const inner = (
+    <>
       <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
       <div className={`mt-1 text-xl font-bold ${toneClass}`}>{value}</div>
       {hint && <div className="mt-0.5 text-xs text-slate-400">{hint}</div>}
-    </div>
+    </>
   );
+  if (href) {
+    return (
+      <Link href={href} className="card block transition hover:ring-2 hover:ring-brand/30">
+        {inner}
+        <div className="mt-1 text-xs text-brand">Details →</div>
+      </Link>
+    );
+  }
+  return <div className="card">{inner}</div>;
 }
 
 function Cell({ value, month, tone }: { value: number; month: CashflowMonth; tone?: "in" | "out" }) {
@@ -116,15 +127,16 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label="Verfügbare Liquidität" value={formatCents(kpis.currentBalance)} tone={kpis.currentBalance < 0 ? "negative" : "default"} />
-        <Stat label="Ø Einnahmen / Monat" value={formatCents(kpis.avgMonthlyIncome)} tone="positive" hint="letzte 3 Monate" />
-        <Stat label="Ø Ausgaben / Monat" value={formatCents(-kpis.avgMonthlyExpense)} hint="letzte 3 Monate" />
+        <Stat label="Verfügbare Liquidität" value={formatCents(kpis.currentBalance)} tone={kpis.currentBalance < 0 ? "negative" : "default"} href="/drilldown?metric=balance" />
+        <Stat label="Ø Einnahmen / Monat" value={formatCents(kpis.avgMonthlyIncome)} tone="positive" hint="letzte 3 Monate" href="/drilldown?metric=income3m" />
+        <Stat label="Ø Ausgaben / Monat" value={formatCents(-kpis.avgMonthlyExpense)} hint="letzte 3 Monate" href="/drilldown?metric=expense3m" />
         <Stat
           label="Reichweite"
           value={kpis.runwayMonths == null ? "∞" : `${kpis.runwayMonths} Mon.`}
           tone={kpis.runwayMonths != null && kpis.runwayMonths < 6 ? "warning" : "default"}
+          href="/drilldown?metric=runway"
         />
-        <Stat label="Working Capital" value={formatCents(kpis.workingCapital)} tone={kpis.workingCapital < 0 ? "negative" : "default"} hint="Saldo + Ford. − Verb." />
+        <Stat label="Working Capital" value={formatCents(kpis.workingCapital)} tone={kpis.workingCapital < 0 ? "negative" : "default"} hint="Saldo + Ford. − Verb." href="/drilldown?metric=workingCapital" />
       </div>
 
       {warnNegative && lowestFuture && (

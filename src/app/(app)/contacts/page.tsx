@@ -1,14 +1,18 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { Pagination } from "@/components/pagination";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 50;
 
 export default async function ContactsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; page?: string }>;
 }) {
   const sp = await searchParams;
+  const page = Math.max(1, Number(sp.page) || 1);
   const where: Prisma.ContactWhereInput = sp.q
     ? {
         OR: [
@@ -19,10 +23,17 @@ export default async function ContactsPage({
       }
     : {};
 
-  const [contacts, total] = await Promise.all([
-    prisma.contact.findMany({ where, orderBy: { name: "asc" }, take: 200 }),
+  const [contacts, matchCount, total] = await Promise.all([
+    prisma.contact.findMany({
+      where,
+      orderBy: { name: "asc" },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE,
+    }),
+    prisma.contact.count({ where }),
     prisma.contact.count(),
   ]);
+  const totalPages = Math.ceil(matchCount / PAGE_SIZE);
 
   return (
     <div className="space-y-6">
@@ -49,37 +60,44 @@ export default async function ContactsPage({
         ) : contacts.length === 0 ? (
           <p className="text-sm text-slate-400">Keine Treffer.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="th">Name</th>
-                  <th className="th">Typ</th>
-                  <th className="th">Organisation</th>
-                  <th className="th">E-Mail</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contacts.map((c) => (
-                  <tr key={c.id} className="border-b border-slate-50">
-                    <td className="td font-medium">{c.name}</td>
-                    <td className="td">
-                      <span
-                        className={`badge ${c.type === "ORG" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700"}`}
-                      >
-                        {c.type === "ORG" ? "Organisation" : "Person"}
-                      </span>
-                    </td>
-                    <td className="td text-slate-600">{c.orgName ?? "—"}</td>
-                    <td className="td text-slate-600">{c.email ?? "—"}</td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="th">Name</th>
+                    <th className="th">Typ</th>
+                    <th className="th">Organisation</th>
+                    <th className="th">E-Mail</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {contacts.length === 200 && (
-              <p className="mt-3 text-xs text-slate-400">Erste 200 angezeigt – nutze die Suche.</p>
-            )}
-          </div>
+                </thead>
+                <tbody>
+                  {contacts.map((c) => (
+                    <tr key={c.id} className="border-b border-slate-50">
+                      <td className="td font-medium">{c.name}</td>
+                      <td className="td">
+                        <span
+                          className={`badge ${c.type === "ORG" ? "bg-violet-100 text-violet-700" : "bg-sky-100 text-sky-700"}`}
+                        >
+                          {c.type === "ORG" ? "Organisation" : "Person"}
+                        </span>
+                      </td>
+                      <td className="td text-slate-600">{c.orgName ?? "—"}</td>
+                      <td className="td text-slate-600">{c.email ?? "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              totalItems={matchCount}
+              pageSize={PAGE_SIZE}
+              basePath="/contacts"
+              params={{ q: sp.q }}
+            />
+          </>
         )}
       </div>
     </div>

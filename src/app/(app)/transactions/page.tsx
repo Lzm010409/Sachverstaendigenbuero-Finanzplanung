@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { deleteTransaction } from "@/app/actions/transactions";
 import { TxCategorySelect } from "./tx-category-select";
+import { Pagination } from "@/components/pagination";
 
 export const dynamic = "force-dynamic";
 
@@ -41,13 +42,6 @@ export default async function TransactionsPage({
 
   const pages = Math.ceil(totalCount / PAGE_SIZE);
   const catOptions = categories.map((c) => ({ id: c.id, name: c.name }));
-
-  const qs = (patch: Record<string, string | undefined>) => {
-    const params = new URLSearchParams();
-    const merged = { account: sp.account, state: sp.state, q: sp.q, ...patch };
-    for (const [k, v] of Object.entries(merged)) if (v) params.set(k, v);
-    return `?${params.toString()}`;
-  };
 
   return (
     <div className="space-y-6">
@@ -138,25 +132,14 @@ export default async function TransactionsPage({
           </div>
         )}
 
-        {pages > 1 && (
-          <div className="mt-4 flex items-center justify-between text-sm">
-            <span className="text-slate-500">
-              Seite {page} / {pages}
-            </span>
-            <div className="flex gap-2">
-              {page > 1 && (
-                <Link className="btn-secondary" href={qs({ page: String(page - 1) })}>
-                  ← Zurück
-                </Link>
-              )}
-              {page < pages && (
-                <Link className="btn-secondary" href={qs({ page: String(page + 1) })}>
-                  Weiter →
-                </Link>
-              )}
-            </div>
-          </div>
-        )}
+        <Pagination
+          page={page}
+          totalPages={pages}
+          totalItems={totalCount}
+          pageSize={PAGE_SIZE}
+          basePath="/transactions"
+          params={{ account: sp.account, state: sp.state, q: sp.q }}
+        />
       </div>
     </div>
   );

@@ -147,6 +147,10 @@ model Budget {
   category    Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   note        String?
   active      Boolean      @default(true)
+  // Wenn true: fließt als wiederkehrender Planposten (im Rhythmus, innerhalb des
+  // Zeitraums) in die Liquiditätsprognose ein. Standard aus, um Doppelzählung mit
+  // echten Umsätzen/Planposten zu vermeiden.
+  includeInForecast Boolean @default(false)
   createdAt   DateTime     @default(now())
   // Soft-Delete: 30 Tage wiederherstellbar, danach endgültig.
   deletedAt   DateTime?

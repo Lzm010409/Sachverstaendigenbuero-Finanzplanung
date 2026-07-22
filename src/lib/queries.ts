@@ -7,6 +7,7 @@ import {
   type ScenarioConfig,
 } from "./forecast";
 import { addMonths, startOfDayUTC, todayUTC } from "./dates";
+import { getForecastBudgetItems } from "./budgets";
 
 /**
  * Aktueller Gesamtsaldo (Cent) = Summe der Anfangssalden aller aktiven Konten
@@ -101,11 +102,12 @@ export async function getScenarioConfig(scenarioId?: string): Promise<ScenarioCo
 
 /** Baut die Liquiditätsvorschau über einen Horizont (Tage) aus den DB-Daten. */
 export const getForecast = cache(async (horizonDays = 90, scenarioId?: string): Promise<ForecastResult> => {
-  const [startBalance, planned, oneOffs, scenario] = await Promise.all([
+  const [startBalance, planned, oneOffs, scenario, budgetItems] = await Promise.all([
     getTotalBalanceCents(),
     prisma.plannedItem.findMany({ where: { active: true } }),
     getOpenItemOneOffs(),
     getScenarioConfig(scenarioId),
+    getForecastBudgetItems(),
   ]);
 
   return buildForecast({
@@ -114,16 +116,20 @@ export const getForecast = cache(async (horizonDays = 90, scenarioId?: string): 
     horizonDays,
     oneOffs,
     scenario,
-    plannedItems: planned.map((p) => ({
-      id: p.id,
-      name: p.name,
-      amount: p.amount,
-      recurrence: p.recurrence,
-      interval: p.interval,
-      startDate: p.startDate,
-      endDate: p.endDate,
-      categoryId: p.categoryId,
-    })),
+    plannedItems: [
+      ...planned.map((p) => ({
+        id: p.id,
+        name: p.name,
+        amount: p.amount,
+        recurrence: p.recurrence,
+        interval: p.interval,
+        startDate: p.startDate,
+        endDate: p.endDate,
+        categoryId: p.categoryId,
+      })),
+      // Budgets mit „In Prognose einplanen" als zusätzliche Planposten.
+      ...budgetItems,
+    ],
   });
 });
 

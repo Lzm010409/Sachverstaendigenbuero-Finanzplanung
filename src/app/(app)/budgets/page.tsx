@@ -32,6 +32,7 @@ type Row = {
   endDate: Date | null;
   note: string | null;
   active: boolean;
+  includeInForecast: boolean;
   category: { name: string; color: string } | null;
 };
 
@@ -39,7 +40,7 @@ function toView(b: Row): BudgetView {
   return {
     id: b.id, title: b.title, kind: b.kind, amount: b.amount, period: b.period,
     categoryId: b.categoryId, startDate: isoDay(b.startDate), endDate: isoDay(b.endDate),
-    note: b.note, active: b.active,
+    note: b.note, active: b.active, includeInForecast: b.includeInForecast,
   };
 }
 
@@ -67,6 +68,7 @@ function BudgetTable({ title, rows, categories, tone }: { title: string; rows: R
                     ) : (
                       <span className="badge bg-slate-50 text-slate-400">ohne Kategorie</span>
                     )}
+                    {b.includeInForecast && <span className="badge bg-primary-subtle text-brand-fg">in Prognose</span>}
                     {!b.active && <span className="badge bg-amber-100 text-amber-700">inaktiv</span>}
                   </div>
                   <div className="mt-0.5 text-xs text-slate-400">

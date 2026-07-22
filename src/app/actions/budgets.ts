@@ -34,6 +34,7 @@ const budgetSchema = z.object({
   startDate: z.string().optional(),
   endDate: z.string().optional(),
   note: z.string().optional(),
+  includeInForecast: z.string().optional(),
 });
 
 function readForm(formData: FormData) {
@@ -52,6 +53,7 @@ function readForm(formData: FormData) {
       startDate: parseDate(formData.get("startDate")),
       endDate: parseDate(formData.get("endDate")),
       note: d.note?.trim() || null,
+      includeInForecast: d.includeInForecast === "on" || d.includeInForecast === "true",
     },
   } as const;
 }

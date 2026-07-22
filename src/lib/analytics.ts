@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { addDays, addMonths, isoDate, startOfDayUTC, todayUTC } from "./dates";
 import { getTotalBalanceCents, INCLUDED_ACCOUNT } from "./queries";
-import { getBudgetAnnualByCategory } from "./budgets";
+import { getBudgetAnnualByCategory, getForecastBudgetItems } from "./budgets";
 import { budgetAnnualCents, isBudgetActiveOn } from "./budget";
 
 export type Granularity = "week" | "month" | "year";
@@ -251,7 +251,7 @@ export async function getCashflowMatrix(
   // Ist-Summen des laufenden Kalenderjahres je Kategorie (für die Jahresbudget-
   // Erreichung), unabhängig vom angezeigten Fenster.
   const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
-  const [categories, txs, planned, openItems, balance, yearAgg, budgetByCat] = await Promise.all([
+  const [categories, txs, planned, openItems, balance, yearAgg, budgetByCat, budgetForecast] = await Promise.all([
     prisma.category.findMany({ where: { deletedAt: null } }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
@@ -266,6 +266,7 @@ export async function getCashflowMatrix(
       _sum: { amount: true },
     }),
     getBudgetAnnualByCategory(today),
+    getForecastBudgetItems(today),
   ]);
   const yearByCat = new Map(yearAgg.map((a) => [a.categoryId!, a._sum.amount ?? 0]));
 
@@ -283,6 +284,13 @@ export async function getCashflowMatrix(
   for (const p of planned) {
     for (const date of occurrencesBetween(p, tomorrow, addDays(rangeEnd, -1))) {
       futureEvents.push({ date, amount: p.amount, categoryId: p.categoryId });
+    }
+  }
+  // Budgets mit „In Prognose einplanen" – als wiederkehrende Planposten im
+  // Rhythmus, innerhalb ihres Gültigkeitszeitraums.
+  for (const b of budgetForecast) {
+    for (const date of occurrencesBetween(b, tomorrow, addDays(rangeEnd, -1))) {
+      futureEvents.push({ date, amount: b.amount, categoryId: b.categoryId });
     }
   }
   for (const oi of openItems) {

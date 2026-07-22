@@ -16,6 +16,7 @@ export interface BudgetView {
   endDate: string | null;
   note: string | null;
   active: boolean;
+  includeInForecast: boolean;
 }
 
 // Kategorie-Auswahl mit „keine"-Option (Budget kann ohne Kategorie bestehen).
@@ -84,10 +85,19 @@ export function BudgetForm({ categories }: { categories: CatOption[] }) {
         <label className="label">Gültig bis</label>
         <input name="endDate" type="date" className="input py-1 text-sm" />
       </div>
+      <label className="flex items-center gap-2 pb-2 text-sm text-slate-600">
+        <input type="checkbox" name="includeInForecast" className="h-4 w-4 rounded border-slate-300" />
+        In Liquiditätsprognose einplanen
+      </label>
       {state?.error && <p className="w-full text-sm text-red-600">{state.error}</p>}
       <button type="submit" className="btn-primary" disabled={pending}>
         {pending ? "…" : "Budget anlegen"}
       </button>
+      <p className="w-full text-xs text-slate-400">
+        Aktiviert fließt das Budget als wiederkehrender Planposten (im Rhythmus, innerhalb Gültig-ab/bis)
+        in Prognose, 13-Wochen-Vorschau und Übersicht ein. Standard aus, um Doppelzählung mit echten
+        Umsätzen/Planposten zu vermeiden.
+      </p>
     </form>
   );
 }
@@ -150,6 +160,10 @@ export function BudgetRow({ budget, categories }: { budget: BudgetView; categori
         <label className="label">bis</label>
         <input name="endDate" type="date" className="input py-1 text-sm" defaultValue={budget.endDate ?? ""} />
       </div>
+      <label className="flex items-center gap-2 pb-1 text-sm text-slate-600">
+        <input type="checkbox" name="includeInForecast" defaultChecked={budget.includeInForecast} className="h-4 w-4 rounded border-slate-300" />
+        in Prognose
+      </label>
       <button type="submit" className="btn-primary px-3 py-1 text-sm" disabled={pending}>
         {pending ? "…" : "Speichern"}
       </button>

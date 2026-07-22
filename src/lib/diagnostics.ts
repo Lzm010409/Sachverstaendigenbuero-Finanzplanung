@@ -130,8 +130,8 @@ async function dataIntegrity(): Promise<CheckResult[]> {
     minD && maxD ? `${minD.toISOString().slice(0, 10)} … ${maxD.toISOString().slice(0, 10)}` : "keine Daten"));
 
   // Kategorien
-  const categories = await prisma.category.findMany({ select: { id: true, annualBudget: true, color: true } });
-  const negBudget = categories.filter((c) => c.annualBudget < 0).length;
+  const categories = await prisma.category.findMany({ select: { id: true, color: true } });
+  const negBudget = await prisma.budget.count({ where: { deletedAt: null, amount: { lt: 0 } } });
   out.push(check("cat.budget", "Keine negativen Budgets", negBudget === 0 ? "pass" : "fail",
     negBudget === 0 ? "ok" : `${negBudget} negativ`, negBudget));
   const badColor = categories.filter((c) => !HEX_COLOR.test(c.color)).length;

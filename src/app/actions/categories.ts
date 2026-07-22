@@ -4,35 +4,25 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { parseAmountToCents } from "@/lib/money";
-import { periodToAnnualCents, type BudgetPeriod } from "@/lib/budget";
 import type { FormState } from "./types";
 
-const BUDGET_PERIOD_VALUES = ["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"] as const;
-function parsePeriod(v: unknown): BudgetPeriod {
-  const s = String(v ?? "");
-  return (BUDGET_PERIOD_VALUES as readonly string[]).includes(s) ? (s as BudgetPeriod) : "MONTHLY";
-}
-
+// Kategorien sind reine Klassifizierungs-Labels (Name, Art, Farbe). Das
+// Finanzielle (Budget / geplante Ausgabe) ist bewusst entkoppelt und lebt im
+// eigenen Budget-Objekt – siehe actions/budgets.ts.
 const catSchema = z.object({
   name: z.string().min(1, "Name erforderlich"),
   kind: z.enum(["INCOME", "EXPENSE"]),
   color: z.string().optional(),
-  budgetAmount: z.string().optional(),
-  budgetPeriod: z.string().optional(),
 });
 
 export async function createCategory(formData: FormData): Promise<FormState> {
   const parsed = catSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.errors[0]?.message };
-  const period = parsePeriod(parsed.data.budgetPeriod);
-  const amountCents = Math.abs(parseAmountToCents(parsed.data.budgetAmount ?? "") ?? 0);
   await prisma.category.create({
     data: {
       name: parsed.data.name,
       kind: parsed.data.kind,
       color: parsed.data.color || "#64748b",
-      annualBudget: periodToAnnualCents(amountCents, period),
-      budgetPeriod: period,
     },
   });
   revalidatePath("/categories");
@@ -65,19 +55,6 @@ export async function purgeCategory(formData: FormData) {
   if (!id) return;
   await prisma.category.delete({ where: { id } });
   revalidatePath("/categories");
-}
-
-/** Budget im gewählten Rhythmus setzen (intern als Jahreswert normalisiert). */
-export async function setCategoryBudget(formData: FormData) {
-  const id = String(formData.get("id") ?? "");
-  if (!id) return;
-  const period = parsePeriod(formData.get("budgetPeriod"));
-  const amountCents = Math.abs(parseAmountToCents(String(formData.get("amount") ?? "")) ?? 0);
-  const annualBudget = periodToAnnualCents(amountCents, period);
-  await prisma.category.update({ where: { id }, data: { annualBudget, budgetPeriod: period } });
-  revalidatePath("/categories");
-  revalidatePath("/breakdown");
-  revalidatePath("/");
 }
 
 const ruleSchema = z.object({

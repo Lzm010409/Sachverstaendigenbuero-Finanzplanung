@@ -114,10 +114,6 @@ model Category {
   name         String
   kind         CategoryKind
   color        String        @default("#64748b")
-  // Jahresbudget in Cent (Betrag, positiv) – interne Normalisierung.
-  // Erfasst/angezeigt wird es im gewählten Rhythmus (budgetPeriod).
-  annualBudget Int           @default(0)
-  budgetPeriod BudgetPeriod  @default(MONTHLY)
   parentId     String?
   parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children     Category[]    @relation("CategoryTree")
@@ -125,12 +121,39 @@ model Category {
   transactions Transaction[]
   plannedItems PlannedItem[]
   openItems    OpenItem[]
+  budgets      Budget[]
   scenarioAdjustments ScenarioCategoryAdjustment[]
   createdAt    DateTime      @default(now())
   // Soft-Delete: gesetzt = gelöscht (30 Tage wiederherstellbar, danach endgültig).
   deletedAt    DateTime?
 
   @@index([kind])
+  @@index([deletedAt])
+}
+
+// Budget / geplante Ausgabe – bewusst von der Kategorie ENTKOPPELT (eigenes
+// Objekt mit Titel, Betrag, Rhythmus und optionalem Gültigkeitszeitraum). Die
+// Verknüpfung zu einer Kategorie ist optional; mehrere Budgets je Kategorie sind
+// möglich. Betrag wird je Periode (period) erfasst und positiv gespeichert.
+model Budget {
+  id          String       @id @default(cuid())
+  title       String
+  kind        CategoryKind
+  amount      Int          @default(0) // Cent, positiv, je Periode
+  period      BudgetPeriod @default(MONTHLY)
+  startDate   DateTime? // Gültig ab (optional)
+  endDate     DateTime? // Gültig bis (optional)
+  categoryId  String?
+  category    Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  note        String?
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  // Soft-Delete: 30 Tage wiederherstellbar, danach endgültig.
+  deletedAt   DateTime?
+
+  @@index([kind])
+  @@index([categoryId])
+  @@index([active])
   @@index([deletedAt])
 }
 

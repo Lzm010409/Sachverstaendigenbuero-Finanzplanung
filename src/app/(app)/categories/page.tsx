@@ -1,14 +1,9 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { deleteCategory, purgeCategory, restoreCategory } from "@/app/actions/categories";
 import { ApplyRulesButton, CategoryForm, ResetCategoriesButton, RuleForm, type CatOption } from "./category-forms";
 import { RuleRow } from "./rule-row";
-import { BudgetInput } from "./budget-input";
 import { ConfirmSubmit } from "@/components/confirm-submit";
-import { annualToPeriodCents, type BudgetPeriod } from "@/lib/budget";
-
-function budgetToInput(cents: number): string {
-  return cents > 0 ? (cents / 100).toFixed(2).replace(".", ",") : "";
-}
 
 export const dynamic = "force-dynamic";
 
@@ -19,9 +14,7 @@ type CatRow = {
   name: string;
   kind: "INCOME" | "EXPENSE";
   color: string;
-  annualBudget: number;
-  budgetPeriod: BudgetPeriod;
-  _count: { transactions: number };
+  _count: { transactions: number; budgets: number };
 };
 
 function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; tone: "in" | "out" }) {
@@ -39,7 +32,7 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
               <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
                 <th className="th">Kategorie</th>
                 <th className="th text-right">Umsätze</th>
-                <th className="th text-right">Budget / Rhythmus</th>
+                <th className="th text-right">Budgets</th>
                 <th className="th"></th>
               </tr>
             </thead>
@@ -51,12 +44,12 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
                     {c.name}
                   </td>
                   <td className="td text-right text-slate-500">{c._count.transactions}</td>
-                  <td className="td text-right">
-                    <BudgetInput
-                      id={c.id}
-                      initialAmount={budgetToInput(annualToPeriodCents(c.annualBudget, c.budgetPeriod))}
-                      initialPeriod={c.budgetPeriod}
-                    />
+                  <td className="td text-right text-slate-500">
+                    {c._count.budgets > 0 ? (
+                      <Link href="/budgets" className="text-brand hover:underline">{c._count.budgets}</Link>
+                    ) : (
+                      <span className="text-slate-300">–</span>
+                    )}
                   </td>
                   <td className="td text-right">
                     <form action={deleteCategory}>
@@ -81,12 +74,12 @@ export default async function CategoriesPage() {
     prisma.category.findMany({
       where: { deletedAt: null },
       orderBy: [{ kind: "asc" }, { name: "asc" }],
-      include: { _count: { select: { transactions: true } } },
+      include: { _count: { select: { transactions: true, budgets: true } } },
     }),
     prisma.category.findMany({
       where: { deletedAt: { not: null } },
       orderBy: { deletedAt: "asc" },
-      include: { _count: { select: { transactions: true } } },
+      include: { _count: { select: { transactions: true, budgets: true } } },
     }),
     prisma.rule.findMany({ where: { category: { deletedAt: null } }, orderBy: { priority: "asc" }, include: { category: true } }),
   ]);
@@ -106,7 +99,10 @@ export default async function CategoriesPage() {
       </div>
 
       <div className="card space-y-6">
-        <h2 className="text-sm font-semibold text-slate-700">Kategorien &amp; Budgets</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700">Kategorien</h2>
+          <Link href="/budgets" className="text-xs text-brand hover:underline">Budgets verwalten →</Link>
+        </div>
         {active.length === 0 ? (
           <p className="text-sm text-slate-400">Noch keine Kategorien.</p>
         ) : (

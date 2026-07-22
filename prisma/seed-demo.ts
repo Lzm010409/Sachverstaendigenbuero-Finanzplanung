@@ -33,12 +33,22 @@ const BUDGETS_EUR: Record<string, number> = {
   Bankgebühren: 200,
 };
 
-// Setzt Budgets auf Demo-Kategorien, die noch keines haben (idempotent).
+// Legt je Demo-Kategorie ein (entkoppeltes) Monats-Budget an, sofern noch keines
+// existiert (idempotent). Betrag = Jahreswert/12 im Rhythmus MONTHLY.
 async function ensureBudgets() {
   for (const [name, eur] of Object.entries(BUDGETS_EUR)) {
-    await prisma.category.updateMany({
-      where: { name, annualBudget: 0 },
-      data: { annualBudget: Math.round(eur * 100) },
+    const cat = await prisma.category.findFirst({ where: { name, deletedAt: null } });
+    if (!cat) continue;
+    const existing = await prisma.budget.count({ where: { categoryId: cat.id } });
+    if (existing > 0) continue;
+    await prisma.budget.create({
+      data: {
+        title: name,
+        kind: cat.kind,
+        amount: Math.round((eur * 100) / 12),
+        period: "MONTHLY",
+        categoryId: cat.id,
+      },
     });
   }
 }

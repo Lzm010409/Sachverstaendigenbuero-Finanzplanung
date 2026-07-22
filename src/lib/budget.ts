@@ -30,3 +30,22 @@ export function periodToAnnualCents(amountCents: number, p: BudgetPeriod): numbe
 export function annualToPeriodCents(annualCents: number, p: BudgetPeriod): number {
   return Math.round(annualCents / periodsPerYear(p));
 }
+
+/** Jahreswert (Cent) eines Budgets = Periodenbetrag × Perioden/Jahr. */
+export function budgetAnnualCents(amountCents: number, p: BudgetPeriod): number {
+  return periodToAnnualCents(amountCents, p);
+}
+
+/**
+ * Ist das Budget an einem Stichtag gültig? Ohne Zeitraum gilt es immer;
+ * mit startDate/endDate nur innerhalb des (inklusiven) Fensters.
+ */
+export function isBudgetActiveOn(
+  b: { startDate?: Date | null; endDate?: Date | null },
+  ref: Date,
+): boolean {
+  const t = ref.getTime();
+  if (b.startDate && t < new Date(b.startDate).getTime()) return false;
+  if (b.endDate && t > new Date(b.endDate).getTime()) return false;
+  return true;
+}

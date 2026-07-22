@@ -33,6 +33,7 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string; icon: s
     items: [
       { href: "/transactions", label: "Umsätze", icon: "💶" },
       { href: "/categories", label: "Kategorien", icon: "🏷️" },
+      { href: "/budgets", label: "Budgets", icon: "💰" },
       { href: "/import", label: "Import", icon: "📥" },
       { href: "/accounts", label: "Konten", icon: "🏦" },
     ],

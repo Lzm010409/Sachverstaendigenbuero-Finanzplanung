@@ -1,6 +1,8 @@
 import { prisma } from "./db";
 import { addDays, addMonths, isoDate, startOfDayUTC, todayUTC } from "./dates";
 import { getTotalBalanceCents, INCLUDED_ACCOUNT } from "./queries";
+import { getBudgetAnnualByCategory } from "./budgets";
+import { budgetAnnualCents, isBudgetActiveOn } from "./budget";
 
 export type Granularity = "week" | "month" | "year";
 
@@ -97,7 +99,7 @@ export async function getCategoryBreakdown(
   const yearStart = new Date(Date.UTC(ref.getUTCFullYear(), 0, 1));
   const yearEnd = new Date(Date.UTC(ref.getUTCFullYear() + 1, 0, 1));
 
-  const [categories, txs, yearTxs] = await Promise.all([
+  const [categories, txs, yearTxs, budgetByCat] = await Promise.all([
     prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
@@ -107,6 +109,7 @@ export async function getCategoryBreakdown(
       where: { bookingDate: { gte: yearStart, lt: yearEnd }, account: INCLUDED_ACCOUNT },
       select: { categoryId: true, amount: true },
     }),
+    getBudgetAnnualByCategory(ref),
   ]);
 
   const divisor = granularity === "month" ? 12 : granularity === "week" ? 52 : 1;
@@ -134,7 +137,7 @@ export async function getCategoryBreakdown(
   const buildRow = (k: string): BreakdownRow => {
     const cat = k === "__none__" ? null : catInfo.get(k);
     const yearActual = Math.abs(yearSums.get(k) ?? 0);
-    const annualBudget = cat?.annualBudget ?? 0;
+    const annualBudget = cat ? (budgetByCat.get(cat.id) ?? 0) : 0;
     return {
       categoryId: cat?.id ?? null,
       name: cat?.name ?? "Ohne Kategorie",
@@ -248,7 +251,7 @@ export async function getCashflowMatrix(
   // Ist-Summen des laufenden Kalenderjahres je Kategorie (für die Jahresbudget-
   // Erreichung), unabhängig vom angezeigten Fenster.
   const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
-  const [categories, txs, planned, openItems, balance, yearAgg] = await Promise.all([
+  const [categories, txs, planned, openItems, balance, yearAgg, budgetByCat] = await Promise.all([
     prisma.category.findMany({ where: { deletedAt: null } }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
@@ -262,6 +265,7 @@ export async function getCashflowMatrix(
       where: { bookingDate: { gte: yearStart, lte: today }, account: INCLUDED_ACCOUNT, categoryId: { not: null } },
       _sum: { amount: true },
     }),
+    getBudgetAnnualByCategory(today),
   ]);
   const yearByCat = new Map(yearAgg.map((a) => [a.categoryId!, a._sum.amount ?? 0]));
 
@@ -367,7 +371,7 @@ export async function getCashflowMatrix(
       const isIncome = rowKind === "INCOME";
       if (kind === "INCOME" ? !isIncome : isIncome) continue;
       if (values.every((v) => v === 0)) continue;
-      const annualBudget = cat?.annualBudget ?? 0;
+      const annualBudget = cat ? (budgetByCat.get(cat.id) ?? 0) : 0;
       const yearActual = cat ? Math.abs(yearByCat.get(cat.id) ?? 0) : 0;
       rows.push({
         categoryId: cat?.id ?? null,
@@ -504,8 +508,14 @@ export async function getBudgetStatus(): Promise<BudgetStatus> {
   const daysElapsed = Math.min(daysInMonth, today.getUTCDate());
   const progress = Math.max(daysElapsed / daysInMonth, 1 / daysInMonth);
 
-  const [categories, txs] = await Promise.all([
-    prisma.category.findMany({ where: { deletedAt: null, annualBudget: { gt: 0 } } }),
+  const [budgets, txs] = await Promise.all([
+    prisma.budget.findMany({
+      where: { deletedAt: null, active: true, categoryId: { not: null }, category: { deletedAt: null } },
+      select: {
+        amount: true, period: true, startDate: true, endDate: true,
+        category: { select: { id: true, name: true, color: true, kind: true } },
+      },
+    }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: monthStart, lt: monthEnd }, account: INCLUDED_ACCOUNT, categoryId: { not: null } },
       select: { categoryId: true, amount: true },
@@ -516,9 +526,21 @@ export async function getBudgetStatus(): Promise<BudgetStatus> {
     actualByCat.set(t.categoryId!, (actualByCat.get(t.categoryId!) ?? 0) + t.amount);
   }
 
-  const rows: BudgetStatusRow[] = categories.map((c) => {
-    const monthlyBudget = Math.round(c.annualBudget / 12);
-    const actual = Math.abs(actualByCat.get(c.id) ?? 0);
+  // Mehrere Budgets je Kategorie zu einem Monatsbudget zusammenfassen (nur am
+  // Stichtag gültige). Kategorie-Metadaten aus dem ersten Budget je Kategorie.
+  const perCat = new Map<string, { monthlyBudget: number; name: string; color: string; kind: "INCOME" | "EXPENSE" }>();
+  for (const b of budgets) {
+    if (!b.category) continue;
+    if (!isBudgetActiveOn(b, today)) continue;
+    const monthly = Math.round(budgetAnnualCents(b.amount, b.period) / 12);
+    const prev = perCat.get(b.category.id);
+    if (prev) prev.monthlyBudget += monthly;
+    else perCat.set(b.category.id, { monthlyBudget: monthly, name: b.category.name, color: b.category.color, kind: b.category.kind });
+  }
+
+  const rows: BudgetStatusRow[] = [...perCat.entries()].map(([categoryId, c]) => {
+    const monthlyBudget = c.monthlyBudget;
+    const actual = Math.abs(actualByCat.get(categoryId) ?? 0);
     const projected = Math.round(actual / progress);
     const pct = monthlyBudget > 0 ? actual / monthlyBudget : 0;
     const projectedPct = monthlyBudget > 0 ? projected / monthlyBudget : 0;
@@ -529,7 +551,7 @@ export async function getBudgetStatus(): Promise<BudgetStatus> {
       // Einnahmen: Zielerreichung ist gut.
       status = projectedPct >= 1 ? "over" : projectedPct >= 0.6 ? "warn" : "ok";
     }
-    return { categoryId: c.id, name: c.name, color: c.color, kind: c.kind, monthlyBudget, actual, projected, pct, projectedPct, status };
+    return { categoryId, name: c.name, color: c.color, kind: c.kind, monthlyBudget, actual, projected, pct, projectedPct, status };
   });
 
   const expenseRows = rows.filter((r) => r.kind === "EXPENSE");

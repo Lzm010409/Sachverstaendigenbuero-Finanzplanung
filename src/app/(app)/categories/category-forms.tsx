@@ -8,7 +8,6 @@ import {
   createRule,
   resetAllTransactionCategories,
 } from "@/app/actions/categories";
-import { BUDGET_PERIODS } from "@/lib/budget";
 
 export function CategoryForm() {
   const ref = useRef<HTMLFormElement>(null);
@@ -36,18 +35,6 @@ export function CategoryForm() {
       <div>
         <label className="label">Farbe</label>
         <input name="color" type="color" defaultValue="#007FFF" className="h-10 w-16 rounded border border-slate-300" />
-      </div>
-      <div className="w-24">
-        <label className="label">Budget (optional)</label>
-        <input name="budgetAmount" className="input" inputMode="decimal" placeholder="0,00" />
-      </div>
-      <div>
-        <label className="label">Rhythmus</label>
-        <select name="budgetPeriod" className="input" defaultValue="MONTHLY">
-          {BUDGET_PERIODS.map((p) => (
-            <option key={p.value} value={p.value}>{p.label}</option>
-          ))}
-        </select>
       </div>
       {state?.error && <p className="w-full text-sm text-red-600">{state.error}</p>}
       <button type="submit" className="btn-primary" disabled={pending}>

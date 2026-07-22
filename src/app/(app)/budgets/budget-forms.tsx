@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { createBudget, updateBudget } from "@/app/actions/budgets";
 import { BUDGET_PERIODS } from "@/lib/budget";
 import type { CatOption } from "../categories/category-forms";
@@ -42,13 +43,17 @@ function CategoryOptional({ categories, defaultValue }: { categories: CatOption[
 
 export function BudgetForm({ categories }: { categories: CatOption[] }) {
   const ref = useRef<HTMLFormElement>(null);
+  const router = useRouter();
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => createBudget(fd),
     {},
   );
   useEffect(() => {
-    if (state?.ok) ref.current?.reset();
-  }, [state]);
+    if (state?.ok) {
+      ref.current?.reset();
+      router.refresh();
+    }
+  }, [state, router]);
 
   return (
     <form ref={ref} action={action} className="flex flex-wrap items-end gap-3">
@@ -104,13 +109,17 @@ export function BudgetForm({ categories }: { categories: CatOption[] }) {
 
 export function BudgetRow({ budget, categories }: { budget: BudgetView; categories: CatOption[] }) {
   const [editing, setEditing] = useState(false);
+  const router = useRouter();
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => updateBudget(fd),
     {},
   );
   useEffect(() => {
-    if (state?.ok) setEditing(false);
-  }, [state]);
+    if (state?.ok) {
+      setEditing(false);
+      router.refresh();
+    }
+  }, [state, router]);
 
   const amountStr = (budget.amount / 100).toFixed(2).replace(".", ",");
 

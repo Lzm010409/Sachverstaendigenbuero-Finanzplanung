@@ -61,7 +61,11 @@ function readForm(formData: FormData) {
 export async function createBudget(formData: FormData): Promise<FormState> {
   const r = readForm(formData);
   if ("error" in r) return { error: r.error };
-  await prisma.budget.create({ data: r.data });
+  try {
+    await prisma.budget.create({ data: r.data });
+  } catch (e) {
+    return { error: `Speichern fehlgeschlagen: ${(e as Error).message}` };
+  }
   revalidateBudgetViews();
   return { ok: true };
 }
@@ -71,7 +75,11 @@ export async function updateBudget(formData: FormData): Promise<FormState> {
   if (!id) return { error: "Budget nicht gefunden." };
   const r = readForm(formData);
   if ("error" in r) return { error: r.error };
-  await prisma.budget.update({ where: { id }, data: r.data });
+  try {
+    await prisma.budget.update({ where: { id }, data: r.data });
+  } catch (e) {
+    return { error: `Speichern fehlgeschlagen: ${(e as Error).message}` };
+  }
   revalidateBudgetViews();
   return { ok: true };
 }

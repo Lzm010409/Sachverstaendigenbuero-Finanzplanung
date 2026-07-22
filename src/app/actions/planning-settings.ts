@@ -33,6 +33,12 @@ export async function savePlanningSettings(formData: FormData): Promise<void> {
     const hour = Number(formData.get("notifyWeeklyHour"));
     if (Number.isInteger(hour) && hour >= 0 && hour <= 23) entries["notify.weeklyHour"] = String(hour);
   }
+  // Täglicher Datenabgleich (Umsätze/Belege/Kontakte).
+  if (formData.has("syncDailySection")) {
+    entries["sync.dailyEnabled"] = formData.get("syncDaily") === "on" ? "true" : "false";
+    const hour = Number(formData.get("syncDailyHour"));
+    if (Number.isInteger(hour) && hour >= 0 && hour <= 23) entries["sync.dailyHour"] = String(hour);
+  }
 
   await Promise.all(
     Object.entries(entries).map(([key, value]) =>

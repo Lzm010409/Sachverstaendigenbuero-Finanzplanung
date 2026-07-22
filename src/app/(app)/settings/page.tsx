@@ -44,10 +44,15 @@ export default async function SettingsPage() {
     "notify.weeklyDay",
     "notify.weeklyHour",
     "notify.lastWeeklySent",
+    "sync.dailyEnabled",
+    "sync.dailyHour",
+    "sync.lastDailyRun",
   ]);
   const weeklyEnabled = s["notify.weekly"] === "true";
   const weeklyDay = Number(s["notify.weeklyDay"] ?? "1");
   const weeklyHour = Number(s["notify.weeklyHour"] ?? "6");
+  const syncDailyEnabled = s["sync.dailyEnabled"] !== "false"; // Standard: aktiv
+  const syncDailyHour = Number(s["sync.dailyHour"] ?? "4");
   const smtpConfigured = !!process.env.SMTP_HOST && !!process.env.SMTP_USER && !!process.env.SMTP_PASS;
   const WEEKDAYS = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
   const sevEnabled = s["sevdesk.enabled"] === "true";
@@ -140,6 +145,41 @@ export default async function SettingsPage() {
             )}
             {s["notify.lastWeeklySent"] && ` · Zuletzt versendet: ${new Date(s["notify.lastWeeklySent"]).toLocaleString("de-DE")}`}
             {" · Hinweis: Uhrzeit in UTC (DE = UTC+1/+2)."}
+          </p>
+        </div>
+
+        {/* Täglicher Datenabgleich */}
+        <div className="border-t border-slate-100 pt-4">
+          <h3 className="text-sm font-semibold text-slate-700">Täglicher Datenabgleich</h3>
+          <p className="mb-3 mt-1 text-xs text-slate-500">
+            Zieht einmal täglich automatisch neue <strong>Umsätze</strong> und <strong>Belege</strong> aus
+            sevDesk sowie <strong>Kontakte</strong> aus Pipedrive – nutzt dieselben Integrationen wie die
+            manuellen Schaltflächen unten.
+          </p>
+          <form action={savePlanningSettings} className="flex flex-wrap items-end gap-4">
+            <input type="hidden" name="syncDailySection" value="1" />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="syncDaily" defaultChecked={syncDailyEnabled} className="h-4 w-4" />
+              aktiv
+            </label>
+            <div>
+              <label className="label">Uhrzeit (UTC)</label>
+              <select name="syncDailyHour" defaultValue={String(syncDailyHour)} className="input w-auto">
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+                ))}
+              </select>
+            </div>
+            <button className="btn-secondary" type="submit">Täglichen Abgleich speichern</button>
+          </form>
+          <p className="mt-2 text-xs text-slate-400">
+            {syncDailyEnabled ? (
+              <span className="text-emerald-600">aktiv ✓</span>
+            ) : (
+              <span className="text-slate-500">deaktiviert</span>
+            )}
+            {s["sync.lastDailyRun"] && ` · Zuletzt gelaufen: ${new Date(s["sync.lastDailyRun"]).toLocaleString("de-DE")}`}
+            {" · Setzt aktive sevDesk-/Pipedrive-Integrationen voraus. Uhrzeit in UTC."}
           </p>
         </div>
       </div>

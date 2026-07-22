@@ -26,6 +26,58 @@ function lastScheduledOccurrence(now: Date, weekday: number, hourUtc: number): D
   return d;
 }
 
+/** Letzter täglicher Termin (Stunde in UTC), der <= now ist. */
+function lastDailyOccurrence(now: Date, hourUtc: number): Date {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUtc, 0, 0));
+  if (d.getTime() > now.getTime()) d.setUTCDate(d.getUTCDate() - 1);
+  return d;
+}
+
+/**
+ * Täglicher Datenabgleich: zieht neue Umsätze und Belege aus sevDesk sowie
+ * Kontakte aus Pipedrive – genau einmal pro Tag (über Setting gemerkt, auch über
+ * Neustarts hinweg). Fehler einzelner Quellen brechen den Lauf nicht ab.
+ */
+async function runDailySyncIfDue(): Promise<void> {
+  try {
+    // Standardmäßig aktiv (nur ausgeschaltet, wenn explizit "false").
+    if ((await getSetting("sync.dailyEnabled")) === "false") return;
+    const hourUtc = Number((await getSetting("sync.dailyHour")) ?? "4"); // 04:00 UTC ≈ 05/06 Uhr DE
+    const now = new Date();
+    const scheduled = lastDailyOccurrence(now, hourUtc);
+    const lastStr = await getSetting("sync.lastDailyRun");
+    const last = lastStr ? new Date(lastStr) : null;
+    if (last && last.getTime() >= scheduled.getTime()) return;
+
+    console.log("[scheduler] Täglicher Sync startet…");
+    const { syncSevdesk, syncSevdeskDocuments, syncPipedrive } = await import("@/app/actions/settings");
+    const steps: [string, () => Promise<unknown>][] = [
+      ["Umsätze", syncSevdesk],
+      ["Belege", syncSevdeskDocuments],
+      ["Kontakte", syncPipedrive],
+    ];
+    for (const [name, fn] of steps) {
+      try {
+        await fn();
+        console.log(`[scheduler] Sync ${name}: ok`);
+      } catch (e) {
+        // Die Datenpersistenz erfolgt vor revalidatePath; ein Fehler hier (z.B.
+        // revalidate außerhalb des Request-Kontexts) beeinträchtigt den Sync nicht.
+        console.log(`[scheduler] Sync ${name}: ${(e as Error).message}`);
+      }
+    }
+    // Einmal pro Tag markieren (Best-Effort), damit nicht alle 30 min erneut läuft.
+    await prisma.setting.upsert({
+      where: { key: "sync.lastDailyRun" },
+      create: { key: "sync.lastDailyRun", value: now.toISOString() },
+      update: { value: now.toISOString() },
+    });
+    console.log(`[scheduler] Täglicher Sync fertig (${now.toISOString()}).`);
+  } catch (e) {
+    console.log("[scheduler] Täglicher Sync Fehler:", (e as Error).message);
+  }
+}
+
 // Soft-gelöschte Kategorien nach 30 Tagen endgültig entfernen.
 async function purgeExpiredCategories(): Promise<void> {
   try {
@@ -39,6 +91,7 @@ async function purgeExpiredCategories(): Promise<void> {
 
 async function tick(): Promise<void> {
   await purgeExpiredCategories();
+  await runDailySyncIfDue();
   try {
     const enabled = (await getSetting("notify.weekly")) === "true";
     if (!enabled) return;
@@ -76,7 +129,7 @@ async function tick(): Promise<void> {
 export function startScheduler(): void {
   if (started) return;
   started = true;
-  console.log("[scheduler] Wochenversand-Scheduler aktiv (Prüfung alle 30 min).");
+  console.log("[scheduler] Scheduler aktiv: Wochenversand + täglicher Datenabgleich (Prüfung alle 30 min).");
   // Erste Prüfung leicht verzögert (Server-Start abwarten).
   setTimeout(() => void tick(), 60 * 1000);
   const timer = setInterval(() => void tick(), CHECK_INTERVAL_MS);

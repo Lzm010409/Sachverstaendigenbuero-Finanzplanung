@@ -4,6 +4,7 @@ import { auth } from "@/auth";
 import { logout } from "@/app/actions/auth";
 import { NavLink } from "@/components/nav-link";
 import { NavGroup } from "@/components/nav-group";
+import { MobileNav } from "@/components/mobile-nav";
 
 // Startseite bleibt einzeln oben; alle übrigen Punkte sind in aufklappbaren
 // Bereichen gebündelt, damit die Seitenleiste kurz bleibt.
@@ -60,8 +61,6 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string; icon: s
   },
 ];
 
-const ALL_ITEMS = [HOME, ...NAV_GROUPS.flatMap((g) => g.items)];
-
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -83,12 +82,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </button>
         </form>
       </aside>
-      <div className="flex-1">
-        <header className="flex items-center gap-2 overflow-x-auto border-b border-slate-200 bg-white px-3 py-2 md:hidden">
-          {ALL_ITEMS.map((item) => (
-            <NavLink key={item.href} href={item.href} icon={item.icon} label={item.label} compact />
-          ))}
-        </header>
+      <div className="min-w-0 flex-1">
+        <MobileNav home={HOME} groups={NAV_GROUPS} />
         <main className="mx-auto max-w-6xl p-4 md:p-8">{children}</main>
       </div>
     </div>

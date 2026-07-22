@@ -6,7 +6,7 @@ import { ScenarioCompareChart, type CompareSeries } from "@/components/scenario-
 
 export const dynamic = "force-dynamic";
 
-const COLORS = ["#0f766e", "#2563eb", "#b45309", "#7c3aed", "#dc2626", "#0891b2"];
+const COLORS = ["#007FFF", "#11b07a", "#e6693a", "#7c3aed", "#f59e0b", "#0891b2"];
 const WEEKS = 13;
 
 export default async function ScenarioComparePage() {

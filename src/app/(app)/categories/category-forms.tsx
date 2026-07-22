@@ -35,7 +35,7 @@ export function CategoryForm() {
       </div>
       <div>
         <label className="label">Farbe</label>
-        <input name="color" type="color" defaultValue="#0f766e" className="h-10 w-16 rounded border border-slate-300" />
+        <input name="color" type="color" defaultValue="#007FFF" className="h-10 w-16 rounded border border-slate-300" />
       </div>
       <div className="w-24">
         <label className="label">Budget (optional)</label>

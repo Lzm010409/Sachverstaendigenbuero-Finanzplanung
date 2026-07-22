@@ -72,12 +72,12 @@ export function CashflowChart({ points, thresholdCents }: { points: CashflowChar
             />
           )}
           {/* Einzahlungen: realisiert (kräftig) + geplant (hell) gestapelt */}
-          <Bar dataKey="inflowRealized" name="inflowRealized" stackId="in" radius={[0, 0, 0, 0]} maxBarSize={22} fill="#22c55e" />
-          <Bar dataKey="inflowPlanned" name="inflowPlanned" stackId="in" radius={[2, 2, 0, 0]} maxBarSize={22} fill="#86efac" fillOpacity={0.7} />
+          <Bar dataKey="inflowRealized" name="inflowRealized" stackId="in" radius={[0, 0, 0, 0]} maxBarSize={22} fill="#11b07a" />
+          <Bar dataKey="inflowPlanned" name="inflowPlanned" stackId="in" radius={[2, 2, 0, 0]} maxBarSize={22} fill="#7fd3b8" fillOpacity={0.75} />
           {/* Auszahlungen */}
-          <Bar dataKey="outflowRealized" name="outflowRealized" stackId="out" radius={[0, 0, 0, 0]} maxBarSize={22} fill="#ef4444" />
-          <Bar dataKey="outflowPlanned" name="outflowPlanned" stackId="out" radius={[2, 2, 0, 0]} maxBarSize={22} fill="#fca5a5" fillOpacity={0.7} />
-          <Line type="monotone" dataKey="liq" name="liq" stroke="#0f766e" strokeWidth={2} dot={{ r: 2 }} />
+          <Bar dataKey="outflowRealized" name="outflowRealized" stackId="out" radius={[0, 0, 0, 0]} maxBarSize={22} fill="#e6693a" />
+          <Bar dataKey="outflowPlanned" name="outflowPlanned" stackId="out" radius={[2, 2, 0, 0]} maxBarSize={22} fill="#f2b49e" fillOpacity={0.75} />
+          <Line type="monotone" dataKey="liq" name="liq" stroke="#007FFF" strokeWidth={2} dot={{ r: 2 }} />
         </ComposedChart>
       </ResponsiveContainer>
     </div>

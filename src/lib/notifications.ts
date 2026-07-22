@@ -101,7 +101,7 @@ export async function buildDigest(): Promise<Digest> {
   };
 }
 
-const COLOR: Record<AlertLevel, string> = { info: "#0f766e", warn: "#b45309", critical: "#b91c1c" };
+const COLOR: Record<AlertLevel, string> = { info: "#007FFF", warn: "#b45309", critical: "#b91c1c" };
 const de = (c: number) => formatCents(c);
 const deDate = (iso: string) => new Date(iso).toLocaleDateString("de-DE");
 
@@ -133,7 +133,7 @@ export function digestToHtml(d: Digest): string {
   return `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:640px;margin:0 auto;color:#0f172a">
     <h2 style="margin:0">Wöchentlicher Liquiditätsbericht</h2>
     <p style="color:#64748b;margin:4px 0 12px">Gollenstede Sachverstand · Stand ${new Date(d.generatedAt).toLocaleDateString("de-DE")}</p>
-    <div style="background:#0f766e;color:#fff;border-radius:10px;padding:16px 18px;margin-bottom:8px">
+    <div style="background:#007FFF;color:#fff;border-radius:10px;padding:16px 18px;margin-bottom:8px">
       <div style="font-size:12px;text-transform:uppercase;opacity:.85">Verfügbare Liquidität</div>
       <div style="font-size:26px;font-weight:700">${de(d.balance)}</div>
     </div>

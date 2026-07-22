@@ -94,15 +94,19 @@ const RULES: [pattern: string, category: string, priority: number][] = [
   ["Gollenstede", "Privatentnahmen", 90], // fängt übrige Familientransfers
 ];
 
+// Robuster Namensvergleich (Unicode NFC + kleingeschrieben), damit z.B.
+// zusammengesetzte vs. zerlegte Umlaute (ä) sicher matchen.
+const norm = (s: string) => s.normalize("NFC").trim().toLowerCase();
+
 async function main() {
-  const cats = await prisma.category.findMany({ select: { id: true, name: true } });
-  const byName = new Map(cats.map((c) => [c.name, c.id]));
+  const cats = await prisma.category.findMany({ select: { id: true, name: true, kind: true } });
+  const byName = new Map(cats.map((c) => [norm(c.name), c.id]));
   const existing = await prisma.rule.findMany({ select: { field: true, pattern: true, categoryId: true } });
   const seen = new Set(existing.map((r) => `${r.field}|${(r.pattern ?? "").toLowerCase()}|${r.categoryId}`));
 
   let created = 0, skippedDup = 0, missingCat = 0;
   for (const [pattern, catName, priority] of RULES) {
-    const categoryId = byName.get(catName);
+    const categoryId = byName.get(norm(catName));
     if (!categoryId) {
       console.log(`[seed-rules] Kategorie fehlt: "${catName}" (Muster "${pattern}")`);
       missingCat++;
@@ -118,16 +122,20 @@ async function main() {
   }
   console.log(`[seed-rules] Regeln: ${created} neu, ${skippedDup} bereits vorhanden, ${missingCat} ohne Kategorie`);
 
-  // Anwenden auf unkategorisierte Umsätze.
+  // Regeln maßgeblich anwenden: unkategorisierte Umsätze zuordnen UND bereits
+  // (durch Regeln) zugeordnete Umsätze bei höher priorisierter Regel umziehen.
+  // Umsätze in einer EINNAHME-Kategorie bleiben unangetastet (schützt die
+  // bereits korrekte Erlös-Zuordnung).
+  const incomeCatIds = new Set(cats.filter((c) => c.kind === "INCOME").map((c) => c.id));
   const rules = (await prisma.rule.findMany({ where: { active: true } })) as unknown as MatchableRule[];
   const txs = await prisma.transaction.findMany({
-    where: { categoryId: null },
-    select: { id: true, counterparty: true, purpose: true, amount: true },
+    select: { id: true, counterparty: true, purpose: true, amount: true, categoryId: true },
   });
   const byCat = new Map<string, string[]>();
   for (const tx of txs) {
+    if (tx.categoryId && incomeCatIds.has(tx.categoryId)) continue; // Erlöse schützen
     const categoryId = categorize(tx, rules);
-    if (categoryId) {
+    if (categoryId && categoryId !== tx.categoryId) {
       if (!byCat.has(categoryId)) byCat.set(categoryId, []);
       byCat.get(categoryId)!.push(tx.id);
     }
@@ -141,7 +149,7 @@ async function main() {
     }
   }
   const remaining = await prisma.transaction.count({ where: { categoryId: null } });
-  console.log(`[seed-rules] Umsätze kategorisiert: ${updated}, weiterhin ohne Kategorie: ${remaining}`);
+  console.log(`[seed-rules] Umsätze zugeordnet/umgezogen: ${updated}, weiterhin ohne Kategorie: ${remaining}`);
 
   // Verteilung je Kategorie (Top).
   const dist = await prisma.transaction.groupBy({

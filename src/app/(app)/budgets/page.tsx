@@ -58,7 +58,7 @@ function BudgetTable({ title, rows, categories, tone }: { title: string; rows: R
             <div key={b.id} className={`rounded-md border border-slate-200 p-3 ${b.active ? "" : "opacity-60"}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-sm font-medium text-slate-800">
+                  <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-800">
                     {b.title}
                     {b.category ? (
                       <span className="badge bg-slate-100 text-slate-600">

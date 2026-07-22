@@ -56,13 +56,13 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
               </div>
               <ul className="space-y-1">
                 {d.events.map((e, idx) => (
-                  <li key={idx} className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2">
-                      <span className={`badge ${TYPE_STYLE[e.type]}`}>{TYPE_LABEL[e.type]}</span>
-                      <span className="text-slate-700">{e.label}</span>
-                      {e.reference && <span className="text-xs text-slate-400">{e.reference}</span>}
+                  <li key={idx} className="flex items-start justify-between gap-3 text-sm">
+                    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span className={`badge shrink-0 ${TYPE_STYLE[e.type]}`}>{TYPE_LABEL[e.type]}</span>
+                      <span className="break-words text-slate-700">{e.label}</span>
+                      {e.reference && <span className="break-words text-xs text-slate-400">{e.reference}</span>}
                     </span>
-                    <span className={`font-semibold tabular-nums ${e.amount < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                    <span className={`shrink-0 font-semibold tabular-nums ${e.amount < 0 ? "text-red-600" : "text-emerald-600"}`}>
                       {formatCents(e.amount)}
                     </span>
                   </li>

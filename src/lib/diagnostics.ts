@@ -245,6 +245,19 @@ async function engineRobustness(): Promise<CheckResult[]> {
   }
   out.push(check("eng.cashflowWalk", "Liquiditäts-Walk konsistent", walkErrors === 0 ? "pass" : "fail",
     walkErrors === 0 ? `${m.months.length} Monate schlüssig` : `${walkErrors} Inkonsistenzen`, walkErrors));
+
+  // Anker-Rekonziliation: Der Walk MUSS am heutigen echten Kontostand hängen.
+  // Vom Start des laufenden Monats bis heute sind nur die realisierten Bewegungen
+  // geflossen – also: startLiquidität(akt. Monat) + realisiert-bisher = Saldo.
+  // (Fängt Anker-Fehler, die die reine Start+Netto=Ende-Prüfung NICHT sieht.)
+  const cur = m.months.find((mo) => mo.isCurrent);
+  if (cur) {
+    const realizedToToday = cur.inflowRealized - cur.outflowRealized;
+    const anchorDiff = cur.startLiquidity + realizedToToday - balance;
+    const anchorOk = Math.abs(anchorDiff) <= 2;
+    out.push(check("eng.cashflowAnchor", "Liquiditäts-Walk am Kontostand verankert", anchorOk ? "pass" : "fail",
+      anchorOk ? "Start akt. Monat + realisiert = Saldo" : `Abweichung ${formatCents(anchorDiff)}`, Math.abs(anchorDiff)));
+  }
   out.push(check("eng.cashflowSplit", "Realisiert + geplant = Gesamt", splitErrors === 0 ? "pass" : "fail",
     splitErrors === 0 ? "stimmig" : `${splitErrors} Abweichungen`, splitErrors));
 

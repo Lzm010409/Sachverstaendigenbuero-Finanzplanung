@@ -338,9 +338,14 @@ export async function getCashflowMatrix(
     });
     endOfWindow = balance - (gap._sum.amount ?? 0);
   } else {
-    // Fenster reicht in die Zukunft: geplante Bewegungen bis rangeEnd aufaddieren.
+    // Fenster reicht in die Zukunft: geplante Bewegungen ab heute bis rangeEnd
+    // aufaddieren. Wichtig: `>= today`, denn überfällige offene Posten werden auf
+    // HEUTE datiert (siehe oben) und fließen bereits als „geplant" in `net` ein –
+    // der Anker muss dieselben Ereignisse enthalten, sonst liegt die gesamte
+    // Liquiditätskette um deren Nettobetrag zu niedrig (Start/Ende inkonsistent
+    // zum echten Kontostand).
     endOfWindow = balance + futureEvents
-      .filter((e) => e.date.getTime() > today.getTime() && e.date.getTime() < rangeEnd.getTime())
+      .filter((e) => e.date.getTime() >= today.getTime() && e.date.getTime() < rangeEnd.getTime())
       .reduce((s, e) => s + e.amount, 0);
   }
   const startLiq = new Array(months.length).fill(0);

@@ -19,7 +19,7 @@ export default async function PlanningPage() {
       orderBy: [{ active: "desc" }, { startDate: "asc" }],
       include: { category: true },
     }),
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.category.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
   ]);
 
   return (

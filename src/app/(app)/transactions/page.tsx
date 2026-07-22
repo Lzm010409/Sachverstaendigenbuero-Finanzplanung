@@ -40,7 +40,7 @@ export default async function TransactionsPage({
     }),
     prisma.transaction.count({ where }),
     prisma.account.findMany({ where: { archived: false }, orderBy: { name: "asc" } }),
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.category.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
   ]);
 
   const pages = Math.ceil(totalCount / PAGE_SIZE);

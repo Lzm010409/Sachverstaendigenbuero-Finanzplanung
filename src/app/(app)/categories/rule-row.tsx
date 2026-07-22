@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { deleteRule, toggleRuleActive, updateRule } from "@/app/actions/categories";
+import { CategorySelect, type CatOption } from "./category-forms";
 
 const FIELD_LABEL: Record<string, string> = { PURPOSE: "Verwendungszweck", COUNTERPARTY: "Gegenpartei" };
 const AMOUNT_OP_LABEL: Record<string, string> = { GT: ">", GTE: "≥", LT: "<", LTE: "≤", EQ: "=" };
@@ -22,7 +23,7 @@ function euro(cents: number): string {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
-export function RuleRow({ rule, categories }: { rule: RuleData; categories: { id: string; name: string }[] }) {
+export function RuleRow({ rule, categories }: { rule: RuleData; categories: CatOption[] }) {
   const [editing, setEditing] = useState(false);
 
   if (editing) {
@@ -69,15 +70,9 @@ export function RuleRow({ rule, categories }: { rule: RuleData; categories: { id
                 placeholder="0,00"
               />
             </div>
-            <div className="min-w-[150px]">
+            <div className="min-w-[160px]">
               <label className="label">Kategorie</label>
-              <select name="categoryId" defaultValue={rule.categoryId} className="input py-1 text-sm" required>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
+              <CategorySelect name="categoryId" categories={categories} defaultValue={rule.categoryId} required />
             </div>
             <div className="w-16">
               <label className="label">Prio</label>

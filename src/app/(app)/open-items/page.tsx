@@ -55,7 +55,7 @@ export default async function OpenItemsPage({
       include: { category: true },
     }),
     prisma.openItem.count({ where }),
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.category.findMany({ where: { deletedAt: null }, orderBy: { name: "asc" } }),
     // Für die Kennzahlen: alle offenen Posten (unabhängig vom Filter).
     prisma.openItem.findMany({
       where: { paid: false },

@@ -44,7 +44,52 @@ export function CategoryForm() {
   );
 }
 
-export function RuleForm({ categories }: { categories: { id: string; name: string }[] }) {
+export interface CatOption {
+  id: string;
+  name: string;
+  kind: "INCOME" | "EXPENSE";
+}
+
+// Kategorie-Auswahl nach Einnahme/Ausgabe gruppiert (optgroup).
+export function CategorySelect({
+  name,
+  categories,
+  defaultValue,
+  required,
+}: {
+  name: string;
+  categories: CatOption[];
+  defaultValue?: string;
+  required?: boolean;
+}) {
+  const income = categories.filter((c) => c.kind === "INCOME");
+  const expense = categories.filter((c) => c.kind === "EXPENSE");
+  return (
+    <select name={name} className="input py-1 text-sm" required={required} defaultValue={defaultValue ?? ""}>
+      {!defaultValue && (
+        <option value="" disabled>
+          wählen…
+        </option>
+      )}
+      {income.length > 0 && (
+        <optgroup label="Einnahmen">
+          {income.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </optgroup>
+      )}
+      {expense.length > 0 && (
+        <optgroup label="Ausgaben">
+          {expense.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </optgroup>
+      )}
+    </select>
+  );
+}
+
+export function RuleForm({ categories }: { categories: CatOption[] }) {
   const ref = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => createRule(fd),
@@ -82,18 +127,9 @@ export function RuleForm({ categories }: { categories: { id: string; name: strin
         <label className="label">Wert (€)</label>
         <input name="amountValue" className="input" placeholder="0,00" inputMode="decimal" />
       </div>
-      <div className="min-w-[140px]">
+      <div className="min-w-[160px]">
         <label className="label">Kategorie</label>
-        <select name="categoryId" className="input" required defaultValue="">
-          <option value="" disabled>
-            wählen…
-          </option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
+        <CategorySelect name="categoryId" categories={categories} required />
       </div>
       <div className="w-16">
         <label className="label">Prio</label>

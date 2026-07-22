@@ -26,7 +26,19 @@ function lastScheduledOccurrence(now: Date, weekday: number, hourUtc: number): D
   return d;
 }
 
+// Soft-gelöschte Kategorien nach 30 Tagen endgültig entfernen.
+async function purgeExpiredCategories(): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const res = await prisma.category.deleteMany({ where: { deletedAt: { lt: cutoff } } });
+    if (res.count > 0) console.log(`[scheduler] ${res.count} abgelaufene Kategorie(n) endgültig gelöscht.`);
+  } catch (e) {
+    console.log("[scheduler] Kategorie-Bereinigung Fehler:", (e as Error).message);
+  }
+}
+
 async function tick(): Promise<void> {
+  await purgeExpiredCategories();
   try {
     const enabled = (await getSetting("notify.weekly")) === "true";
     if (!enabled) return;

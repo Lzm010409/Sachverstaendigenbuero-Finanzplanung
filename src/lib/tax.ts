@@ -52,7 +52,7 @@ export const getVatForecast = cache(async (periodsBack = 2, periodsForward = 2):
 
   // 2) Fallback: Schätzung aus Umsätzen bei einheitlichem Satz.
   const rate = vatRatePercent / 100;
-  const categories = vat ? [] : await prisma.category.findMany({ select: { id: true, kind: true } });
+  const categories = vat ? [] : await prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, kind: true } });
   const incomeIds = new Set(categories.filter((c) => c.kind === "INCOME").map((c) => c.id));
 
   const periods: VatPeriod[] = [];

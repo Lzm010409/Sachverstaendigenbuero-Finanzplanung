@@ -26,7 +26,28 @@ export async function createCategory(formData: FormData): Promise<FormState> {
   return { ok: true };
 }
 
+/** Soft-Delete: Kategorie 30 Tage wiederherstellbar in den Papierkorb legen. */
 export async function deleteCategory(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.category.update({ where: { id }, data: { deletedAt: new Date() } });
+  revalidatePath("/categories");
+  revalidatePath("/breakdown");
+  revalidatePath("/");
+}
+
+/** Stellt eine soft-gelöschte Kategorie wieder her. */
+export async function restoreCategory(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.category.update({ where: { id }, data: { deletedAt: null } });
+  revalidatePath("/categories");
+  revalidatePath("/breakdown");
+  revalidatePath("/");
+}
+
+/** Endgültig löschen (aus dem Papierkorb). Regeln der Kategorie entfallen mit. */
+export async function purgeCategory(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
   await prisma.category.delete({ where: { id } });
@@ -145,7 +166,7 @@ async function bulkAssign(byCat: Map<string, string[]>): Promise<number> {
 export async function applyRulesToUncategorized() {
   const { categorize } = await import("@/lib/categorize");
   const [rules, txs] = await Promise.all([
-    prisma.rule.findMany({ where: { active: true } }),
+    prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } }),
     prisma.transaction.findMany({
       where: { categoryId: null },
       select: { id: true, counterparty: true, purpose: true, amount: true },

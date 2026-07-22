@@ -116,8 +116,11 @@ model Category {
   openItems    OpenItem[]
   scenarioAdjustments ScenarioCategoryAdjustment[]
   createdAt    DateTime      @default(now())
+  // Soft-Delete: gesetzt = gelöscht (30 Tage wiederherstellbar, danach endgültig).
+  deletedAt    DateTime?
 
   @@index([kind])
+  @@index([deletedAt])
 }
 
 // Regel zur automatischen Kategorisierung importierter Umsätze.

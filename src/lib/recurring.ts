@@ -43,7 +43,7 @@ export async function detectRecurring(minOccurrences = 3): Promise<RecurringSugg
       orderBy: { bookingDate: "asc" },
     }),
     prisma.plannedItem.findMany({ select: { name: true } }),
-    prisma.category.findMany({ select: { id: true, name: true } }),
+    prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, name: true } }),
   ]);
   const catName = new Map(cats.map((c) => [c.id, c.name]));
   const plannedNames = new Set(planned.map((p) => p.name.trim().toLowerCase()));

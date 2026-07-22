@@ -23,7 +23,7 @@ export default async function ScenariosPage() {
         categoryAdjustments: { include: { category: true } },
       },
     }),
-    prisma.category.findMany({ orderBy: [{ kind: "asc" }, { name: "asc" }] }),
+    prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
   ]);
 
   return (

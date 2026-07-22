@@ -63,7 +63,7 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
     return { error: `Verbindung zu sevDesk fehlgeschlagen: ${(e as Error).message}` };
   }
 
-  const rules = await prisma.rule.findMany({ where: { active: true } });
+  const rules = await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } });
   let imported = 0;
   let categorized = 0;
   let reconciled = 0;

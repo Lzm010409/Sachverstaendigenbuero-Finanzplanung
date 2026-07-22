@@ -150,7 +150,7 @@ export async function getPlanVsActual(monthOffset = 0): Promise<{
   const monthEnd = addMonths(monthStart, 1);
 
   const [categories, planned, txs] = await Promise.all([
-    prisma.category.findMany(),
+    prisma.category.findMany({ where: { deletedAt: null } }),
     prisma.plannedItem.findMany({ where: { active: true } }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: monthStart, lt: monthEnd }, account: INCLUDED_ACCOUNT },

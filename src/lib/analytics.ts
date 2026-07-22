@@ -98,7 +98,7 @@ export async function getCategoryBreakdown(
   const yearEnd = new Date(Date.UTC(ref.getUTCFullYear() + 1, 0, 1));
 
   const [categories, txs, yearTxs] = await Promise.all([
-    prisma.category.findMany({ orderBy: [{ kind: "asc" }, { name: "asc" }] }),
+    prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
       select: { categoryId: true, amount: true, bookingDate: true },
@@ -243,7 +243,7 @@ export async function getCashflowMatrix(
   }
 
   const [categories, txs, planned, openItems, balance] = await Promise.all([
-    prisma.category.findMany(),
+    prisma.category.findMany({ where: { deletedAt: null } }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
       select: { categoryId: true, amount: true, bookingDate: true },

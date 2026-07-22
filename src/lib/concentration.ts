@@ -26,7 +26,7 @@ export async function getConcentration(months = 12, topN = 15): Promise<Concentr
   const since = new Date(todayUTC());
   since.setUTCMonth(since.getUTCMonth() - months);
 
-  const cats = await prisma.category.findMany({ where: { kind: "INCOME" }, select: { id: true } });
+  const cats = await prisma.category.findMany({ where: { kind: "INCOME", deletedAt: null }, select: { id: true } });
   const incomeIds = new Set(cats.map((c) => c.id));
 
   const [txs, openItems] = await Promise.all([

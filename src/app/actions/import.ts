@@ -39,7 +39,7 @@ export async function importStatement(formData: FormData): Promise<ImportSummary
     return { error: "Keine Umsätze erkannt.", warnings: result.warnings, format: result.format };
   }
 
-  const rules = await prisma.rule.findMany({ where: { active: true } });
+  const rules = await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } });
 
   let categorized = 0;
   // Datensätze im Speicher vorbereiten (Text begrenzen, kategorisieren) und

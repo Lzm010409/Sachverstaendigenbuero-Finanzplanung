@@ -196,6 +196,9 @@ export interface CashflowCatRow {
   kind: "INCOME" | "EXPENSE" | "MIXED";
   color: string;
   values: number[]; // signierte Summe je Monat (Cent)
+  annualBudget: number; // Jahresbudget (Cent)
+  yearActual: number; // Ist im laufenden Kalenderjahr (Magnitude, Cent)
+  budgetPct: number | null; // yearActual / annualBudget, null ohne Budget
 }
 
 export interface CashflowMatrix {
@@ -242,7 +245,10 @@ export async function getCashflowMatrix(
     });
   }
 
-  const [categories, txs, planned, openItems, balance] = await Promise.all([
+  // Ist-Summen des laufenden Kalenderjahres je Kategorie (für die Jahresbudget-
+  // Erreichung), unabhängig vom angezeigten Fenster.
+  const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+  const [categories, txs, planned, openItems, balance, yearAgg] = await Promise.all([
     prisma.category.findMany({ where: { deletedAt: null } }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
@@ -251,7 +257,13 @@ export async function getCashflowMatrix(
     prisma.plannedItem.findMany({ where: { active: true } }),
     prisma.openItem.findMany({ where: { paid: false } }),
     getTotalBalanceCents(),
+    prisma.transaction.groupBy({
+      by: ["categoryId"],
+      where: { bookingDate: { gte: yearStart, lte: today }, account: INCLUDED_ACCOUNT, categoryId: { not: null } },
+      _sum: { amount: true },
+    }),
   ]);
+  const yearByCat = new Map(yearAgg.map((a) => [a.categoryId!, a._sum.amount ?? 0]));
 
   const monthIndex = (d: Date): number =>
     months.findIndex((m) => d.getTime() >= m.start.getTime() && d.getTime() < m.end.getTime());
@@ -350,12 +362,17 @@ export async function getCashflowMatrix(
       const isIncome = rowKind === "INCOME";
       if (kind === "INCOME" ? !isIncome : isIncome) continue;
       if (values.every((v) => v === 0)) continue;
+      const annualBudget = cat?.annualBudget ?? 0;
+      const yearActual = cat ? Math.abs(yearByCat.get(cat.id) ?? 0) : 0;
       rows.push({
         categoryId: cat?.id ?? null,
         name: cat?.name ?? "Unkategorisiert",
         kind: rowKind,
         color: cat?.color ?? "#94a3b8",
         values,
+        annualBudget,
+        yearActual,
+        budgetPct: annualBudget > 0 ? yearActual / annualBudget : null,
       });
     }
     return rows.sort((a, b) => a.name.localeCompare(b.name));

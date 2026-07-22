@@ -3,6 +3,7 @@ import { getBudgetStatus, getCashflowMatrix, getKpis, type CashflowCatRow, type 
 import { getForecast } from "@/lib/queries";
 import { getPlanningSettings, findThresholdBreach } from "@/lib/planning";
 import { formatCents } from "@/lib/money";
+import { budgetCellColor } from "@/lib/budget-color";
 import { CashflowChart } from "@/components/cashflow-chart";
 import { BudgetStatusCard } from "@/components/budget-status-card";
 
@@ -11,6 +12,30 @@ export const dynamic = "force-dynamic";
 function eur(cents: number): string {
   if (cents === 0) return "–";
   return (cents / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 }) + " €";
+}
+
+// Jahresbudget-Zelle: farbige Prozentzahl (Anteil des Jahresbudgets, das im
+// laufenden Kalenderjahr bereits verbraucht/erreicht wurde).
+function BudgetPctCell({ row }: { row: CashflowCatRow }) {
+  if (row.budgetPct == null) {
+    return (
+      <td className="whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums text-slate-300">
+        –
+      </td>
+    );
+  }
+  const isIncome = row.kind === "INCOME";
+  const bg = budgetCellColor(row.yearActual, row.annualBudget, isIncome);
+  const pct = Math.round(row.budgetPct * 100);
+  return (
+    <td
+      className="whitespace-nowrap px-3 py-1.5 text-right text-sm font-semibold tabular-nums text-slate-800"
+      style={bg ? { backgroundColor: bg } : undefined}
+      title={`${formatCents(row.yearActual)} von ${formatCents(row.annualBudget)} (Jahresbudget)`}
+    >
+      {pct} %
+    </td>
+  );
 }
 
 function Stat({
@@ -74,6 +99,7 @@ function CatRow({ row, months }: { row: CashflowCatRow; months: CashflowMonth[] 
       {row.values.map((v, i) => (
         <Cell key={months[i].key} value={v} month={months[i]} tone={isIncome ? "in" : "out"} />
       ))}
+      <BudgetPctCell row={row} />
     </tr>
   );
 }
@@ -106,6 +132,7 @@ function SummaryRow({
           {v === 0 ? <span className="text-slate-300">–</span> : eur(v)}
         </td>
       ))}
+      <td className={`px-3 py-1.5 ${strong ? "bg-slate-50" : "bg-white"}`} />
     </tr>
   );
 }
@@ -237,6 +264,12 @@ export default async function DashboardPage({
                   </Link>
                 </th>
               ))}
+              <th
+                className="whitespace-nowrap px-3 py-2 text-right text-xs font-semibold uppercase tracking-wide text-slate-500"
+                title="Anteil des Jahresbudgets, im laufenden Kalenderjahr erreicht/verbraucht"
+              >
+                % Jahr
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -251,23 +284,23 @@ export default async function DashboardPage({
             <SummaryRow label="Liquidität Ende" values={months.map((m) => m.endLiquidity)} months={months} strong />
 
             <tr className="bg-emerald-50/60">
-              <td className="sticky left-0 z-10 bg-emerald-50 px-3 py-1.5 text-xs font-semibold uppercase text-emerald-700" colSpan={months.length + 1}>
+              <td className="sticky left-0 z-10 bg-emerald-50 px-3 py-1.5 text-xs font-semibold uppercase text-emerald-700" colSpan={months.length + 2}>
                 Einnahmen
               </td>
             </tr>
             {matrix.incomeRows.length === 0 ? (
-              <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 1}>—</td></tr>
+              <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 2}>—</td></tr>
             ) : (
               matrix.incomeRows.map((r) => <CatRow key={r.categoryId ?? r.name} row={r} months={months} />)
             )}
 
             <tr className="bg-red-50/60">
-              <td className="sticky left-0 z-10 bg-red-50 px-3 py-1.5 text-xs font-semibold uppercase text-red-700" colSpan={months.length + 1}>
+              <td className="sticky left-0 z-10 bg-red-50 px-3 py-1.5 text-xs font-semibold uppercase text-red-700" colSpan={months.length + 2}>
                 Ausgaben
               </td>
             </tr>
             {matrix.expenseRows.length === 0 ? (
-              <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 1}>—</td></tr>
+              <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 2}>—</td></tr>
             ) : (
               matrix.expenseRows.map((r) => <CatRow key={r.categoryId ?? r.name} row={r} months={months} />)
             )}

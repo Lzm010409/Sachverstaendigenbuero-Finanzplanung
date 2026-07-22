@@ -109,15 +109,23 @@ function SummaryRow({
   );
 }
 
-export default async function DashboardPage() {
+export default async function DashboardPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ offset?: string }>;
+}) {
+  const sp = await searchParams;
+  const offset = Math.max(0, Number(sp.offset) || 0);
   const [kpis, matrix, forecast, planning] = await Promise.all([
     getKpis(),
-    getCashflowMatrix(6, 6),
+    getCashflowMatrix(6, 6, offset),
     getForecast(180),
     getPlanningSettings(),
   ]);
   const { months } = matrix;
   const breach = findThresholdBreach(forecast, planning.minLiquidityCents);
+  const rangeLabel = `${months[0]?.label} – ${months[months.length - 1]?.label}`;
+  const qs = (o: number) => (o > 0 ? `/?offset=${o}` : "/");
 
   const lowestFuture = months
     .filter((m) => m.isFuture || m.isCurrent)
@@ -131,9 +139,21 @@ export default async function DashboardPage() {
           <h1 className="text-2xl font-bold text-slate-900">Übersicht</h1>
           <p className="text-sm text-slate-500">Liquidität, Ein- und Auszahlungen je Monat</p>
         </div>
-        <Link href="/scenarios" className="text-sm font-medium text-brand hover:underline">
-          Szenarien →
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-1">
+            <Link href={qs(offset + 6)} className="btn-secondary px-2 py-1 text-sm" title="6 Monate früher">◄</Link>
+            <span className="min-w-[150px] text-center text-sm text-slate-600">{rangeLabel}</span>
+            {offset > 0 ? (
+              <Link href={qs(Math.max(0, offset - 6))} className="btn-secondary px-2 py-1 text-sm" title="6 Monate später">►</Link>
+            ) : (
+              <span className="btn-secondary cursor-not-allowed px-2 py-1 text-sm opacity-40">►</span>
+            )}
+            {offset > 0 && <Link href="/" className="ml-1 text-xs text-brand hover:underline">heute</Link>}
+          </div>
+          <Link href="/scenarios" className="text-sm font-medium text-brand hover:underline">
+            Szenarien →
+          </Link>
+        </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">

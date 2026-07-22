@@ -216,27 +216,31 @@ const MONTHS_LONG = [
 export async function getCashflowMatrix(
   monthsBack = 6,
   monthsForward = 6,
+  monthOffset = 0, // 0 = aktuell; > 0 verschiebt das Fenster um n Monate zurück
 ): Promise<CashflowMatrix> {
   const { occurrencesBetween } = await import("./recurrence");
   const today = todayUTC();
+  const back = Math.max(0, Math.floor(monthOffset));
   const curMonthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const rangeStart = addMonths(curMonthStart, -monthsBack);
-  const rangeEnd = addMonths(curMonthStart, monthsForward + 1); // exklusiv
+  // Fenstermitte um `back` Monate in die Vergangenheit verschieben.
+  const windowCenter = addMonths(curMonthStart, -back);
+  const rangeStart = addMonths(windowCenter, -monthsBack);
+  const rangeEnd = addMonths(windowCenter, monthsForward + 1); // exklusiv
 
   const months: { key: string; start: Date; end: Date; label: string; isFuture: boolean; isCurrent: boolean }[] = [];
   for (let i = -monthsBack; i <= monthsForward; i++) {
-    const start = addMonths(curMonthStart, i);
+    const start = addMonths(windowCenter, i);
     const end = addMonths(start, 1);
+    // isCurrent/isFuture beziehen sich immer auf HEUTE, nicht auf die Fenstermitte.
     months.push({
       key: `${start.getUTCFullYear()}-${start.getUTCMonth() + 1}`,
       start,
       end,
       label: `${MONTHS_LONG[start.getUTCMonth()]} ${String(start.getUTCFullYear()).slice(2)}`,
-      isFuture: start.getTime() > today.getTime() && i > 0,
-      isCurrent: i === 0,
+      isFuture: start.getTime() > today.getTime(),
+      isCurrent: today.getTime() >= start.getTime() && today.getTime() < end.getTime(),
     });
   }
-  const ci = monthsBack; // Index des aktuellen Monats
 
   const [categories, txs, planned, openItems, balance] = await Promise.all([
     prisma.category.findMany(),
@@ -307,22 +311,34 @@ export async function getCashflowMatrix(
   for (const t of txs) addValue(monthIndex(t.bookingDate), t.categoryId, t.amount, true);
   for (const e of futureEvents) addValue(monthIndex(e.date), e.categoryId, e.amount, false);
 
-  // Liquiditäts-Walk, verankert am aktuellen Kontostand.
+  // Liquiditäts-Walk, verankert am aktuellen Kontostand – gültig für jedes
+  // Fenster (Vergangenheit/Gegenwart/Zukunft). Idee: Liquidität an der rechten
+  // Fenstergrenze (rangeEnd) aus dem heutigen Saldo herleiten, dann rückwärts
+  // mit den Monats-Nettos gehen (Start + Netto = Ende, lückenlos verkettet).
   const net = months.map((_, i) => inflow[i] - outflow[i]);
-  const txThisMonth = txs
-    .filter((t) => monthIndex(t.bookingDate) === ci)
-    .reduce((s, t) => s + t.amount, 0);
+  let endOfWindow: number;
+  if (rangeEnd.getTime() <= today.getTime()) {
+    // Fenster liegt komplett in der Vergangenheit: heutigen Saldo um die seither
+    // gebuchten Umsätze zurückrechnen.
+    const gap = await prisma.transaction.aggregate({
+      _sum: { amount: true },
+      where: { bookingDate: { gte: rangeEnd, lte: today }, account: INCLUDED_ACCOUNT },
+    });
+    endOfWindow = balance - (gap._sum.amount ?? 0);
+  } else {
+    // Fenster reicht in die Zukunft: geplante Bewegungen bis rangeEnd aufaddieren.
+    endOfWindow = balance + futureEvents
+      .filter((e) => e.date.getTime() > today.getTime() && e.date.getTime() < rangeEnd.getTime())
+      .reduce((s, e) => s + e.amount, 0);
+  }
   const startLiq = new Array(months.length).fill(0);
   const endLiq = new Array(months.length).fill(0);
-  startLiq[ci] = balance - txThisMonth;
-  endLiq[ci] = startLiq[ci] + net[ci];
-  for (let i = ci - 1; i >= 0; i--) {
+  const last = months.length - 1;
+  endLiq[last] = endOfWindow;
+  startLiq[last] = endLiq[last] - net[last];
+  for (let i = last - 1; i >= 0; i--) {
     endLiq[i] = startLiq[i + 1];
     startLiq[i] = endLiq[i] - net[i];
-  }
-  for (let i = ci + 1; i < months.length; i++) {
-    startLiq[i] = endLiq[i - 1];
-    endLiq[i] = startLiq[i] + net[i];
   }
 
   const catInfo = new Map(categories.map((c) => [c.id, c]));

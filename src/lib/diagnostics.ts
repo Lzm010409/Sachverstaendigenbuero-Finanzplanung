@@ -248,6 +248,16 @@ async function engineRobustness(): Promise<CheckResult[]> {
   out.push(check("eng.cashflowSplit", "Realisiert + geplant = Gesamt", splitErrors === 0 ? "pass" : "fail",
     splitErrors === 0 ? "stimmig" : `${splitErrors} Abweichungen`, splitErrors));
 
+  // Historisches Fenster (12 Monate zurück): Walk muss ebenso konsistent sein.
+  {
+    const hm = await getCashflowMatrix(6, 6, 12);
+    let e = 0;
+    for (const mo of hm.months) if (Math.abs(mo.startLiquidity + mo.net - mo.endLiquidity) > 1) e++;
+    for (let i = 0; i + 1 < hm.months.length; i++) if (Math.abs(hm.months[i].endLiquidity - hm.months[i + 1].startLiquidity) > 1) e++;
+    out.push(check("eng.cashflowHistory", "Historisches Fenster konsistent", e === 0 ? "pass" : "fail",
+      e === 0 ? "12 Monate zurück schlüssig" : `${e} Inkonsistenzen`, e));
+  }
+
   // 13-Wochen-Vorschau: Start + Netto = Ende und lückenlose Verkettung.
   {
     const { weeks } = await getWeeklyForecast(13, undefined, 0);

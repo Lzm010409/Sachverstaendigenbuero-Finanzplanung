@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { getCashflowMatrix, getKpis, type CashflowCatRow, type CashflowMonth } from "@/lib/analytics";
+import { getBudgetStatus, getCashflowMatrix, getKpis, type CashflowCatRow, type CashflowMonth } from "@/lib/analytics";
 import { getForecast } from "@/lib/queries";
 import { getPlanningSettings, findThresholdBreach } from "@/lib/planning";
 import { formatCents } from "@/lib/money";
 import { CashflowChart } from "@/components/cashflow-chart";
+import { BudgetStatusCard } from "@/components/budget-status-card";
 
 export const dynamic = "force-dynamic";
 
@@ -116,11 +117,12 @@ export default async function DashboardPage({
 }) {
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
-  const [kpis, matrix, forecast, planning] = await Promise.all([
+  const [kpis, matrix, forecast, planning, budgetStatus] = await Promise.all([
     getKpis(),
     getCashflowMatrix(6, 6, offset),
     getForecast(180),
     getPlanningSettings(),
+    getBudgetStatus(),
   ]);
   const { months } = matrix;
   const breach = findThresholdBreach(forecast, planning.minLiquidityCents);
@@ -215,6 +217,8 @@ export default async function DashboardPage({
           <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-300" /> Auszahlung geplant</span>
         </div>
       </div>
+
+      <BudgetStatusCard status={budgetStatus} />
 
       <div className="card overflow-x-auto p-0">
         <table className="w-full border-collapse">

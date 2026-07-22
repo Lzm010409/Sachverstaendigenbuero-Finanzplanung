@@ -444,3 +444,81 @@ export async function getKpis(): Promise<Kpis> {
     workingCapital: balance + openReceivables - openPayables,
   };
 }
+
+export interface BudgetStatusRow {
+  categoryId: string;
+  name: string;
+  color: string;
+  kind: "INCOME" | "EXPENSE";
+  monthlyBudget: number; // Cent
+  actual: number; // bislang in diesem Monat (Magnitude, Cent)
+  projected: number; // Hochrechnung Monatsende (Magnitude, Cent)
+  pct: number; // actual / monthlyBudget
+  projectedPct: number; // projected / monthlyBudget
+  status: "ok" | "warn" | "over"; // Ausgaben: over=Limit gerissen; Einnahmen: over=Ziel erreicht (positiv)
+}
+
+export interface BudgetStatus {
+  monthLabel: string;
+  daysElapsed: number;
+  daysInMonth: number;
+  rows: BudgetStatusRow[];
+  totalExpenseBudget: number;
+  totalExpenseActual: number;
+  overCount: number; // Ausgaben-Budgets, deren Hochrechnung das Limit reißt
+  atRiskCount: number; // Ausgaben-Budgets nahe am Limit
+}
+
+/**
+ * Budget-Einhaltung im laufenden Monat: Ist-Wert je budgetierter Kategorie plus
+ * Hochrechnung aufs Monatsende (linear nach verstrichenen Tagen). Für Ausgaben
+ * ist Überschreitung ein Risiko, für Einnahmen ist Zielerreichung positiv.
+ */
+export async function getBudgetStatus(): Promise<BudgetStatus> {
+  const today = todayUTC();
+  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const monthEnd = addMonths(monthStart, 1);
+  const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / 86_400_000);
+  const daysElapsed = Math.min(daysInMonth, today.getUTCDate());
+  const progress = Math.max(daysElapsed / daysInMonth, 1 / daysInMonth);
+
+  const [categories, txs] = await Promise.all([
+    prisma.category.findMany({ where: { deletedAt: null, annualBudget: { gt: 0 } } }),
+    prisma.transaction.findMany({
+      where: { bookingDate: { gte: monthStart, lt: monthEnd }, account: INCLUDED_ACCOUNT, categoryId: { not: null } },
+      select: { categoryId: true, amount: true },
+    }),
+  ]);
+  const actualByCat = new Map<string, number>();
+  for (const t of txs) {
+    actualByCat.set(t.categoryId!, (actualByCat.get(t.categoryId!) ?? 0) + t.amount);
+  }
+
+  const rows: BudgetStatusRow[] = categories.map((c) => {
+    const monthlyBudget = Math.round(c.annualBudget / 12);
+    const actual = Math.abs(actualByCat.get(c.id) ?? 0);
+    const projected = Math.round(actual / progress);
+    const pct = monthlyBudget > 0 ? actual / monthlyBudget : 0;
+    const projectedPct = monthlyBudget > 0 ? projected / monthlyBudget : 0;
+    let status: "ok" | "warn" | "over";
+    if (c.kind === "EXPENSE") {
+      status = projectedPct > 1 ? "over" : projectedPct > 0.9 || pct > 0.9 ? "warn" : "ok";
+    } else {
+      // Einnahmen: Zielerreichung ist gut.
+      status = projectedPct >= 1 ? "over" : projectedPct >= 0.6 ? "warn" : "ok";
+    }
+    return { categoryId: c.id, name: c.name, color: c.color, kind: c.kind, monthlyBudget, actual, projected, pct, projectedPct, status };
+  });
+
+  const expenseRows = rows.filter((r) => r.kind === "EXPENSE");
+  return {
+    monthLabel: `${MONTHS_LONG[today.getUTCMonth()]} ${today.getUTCFullYear()}`,
+    daysElapsed,
+    daysInMonth,
+    rows: rows.sort((a, b) => b.projectedPct - a.projectedPct),
+    totalExpenseBudget: expenseRows.reduce((s, r) => s + r.monthlyBudget, 0),
+    totalExpenseActual: expenseRows.reduce((s, r) => s + r.actual, 0),
+    overCount: expenseRows.filter((r) => r.status === "over").length,
+    atRiskCount: expenseRows.filter((r) => r.status === "warn").length,
+  };
+}

@@ -40,7 +40,16 @@ export default async function SettingsPage() {
     "pipedrive.token",
     "pipedrive.domain",
     "pipedrive.lastSync",
+    "notify.weekly",
+    "notify.weeklyDay",
+    "notify.weeklyHour",
+    "notify.lastWeeklySent",
   ]);
+  const weeklyEnabled = s["notify.weekly"] === "true";
+  const weeklyDay = Number(s["notify.weeklyDay"] ?? "1");
+  const weeklyHour = Number(s["notify.weeklyHour"] ?? "6");
+  const smtpConfigured = !!process.env.SMTP_HOST && !!process.env.SMTP_USER && !!process.env.SMTP_PASS;
+  const WEEKDAYS = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
   const sevEnabled = s["sevdesk.enabled"] === "true";
   const sevTokenFromEnv = !!process.env.SEVDESK_API_TOKEN && !s["sevdesk.token"];
   const sevTokenSet = !!s["sevdesk.token"] || !!process.env.SEVDESK_API_TOKEN;
@@ -91,6 +100,48 @@ export default async function SettingsPage() {
             </span>
           </div>
         </form>
+
+        {/* Wöchentlicher Bericht */}
+        <div className="border-t border-slate-100 pt-4">
+          <h3 className="text-sm font-semibold text-slate-700">Automatischer Wochenbericht</h3>
+          <p className="mb-3 mt-1 text-xs text-slate-500">
+            Versendet einmal pro Woche einen vollständigen Liquiditätsbericht (Kennzahlen, offene Posten,
+            13-Wochen-Ausblick, Steuer, Auffälligkeiten) an die oben hinterlegte E-Mail.
+          </p>
+          <form action={savePlanningSettings} className="flex flex-wrap items-end gap-4">
+            <input type="hidden" name="notifyWeeklySection" value="1" />
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="notifyWeekly" defaultChecked={weeklyEnabled} className="h-4 w-4" />
+              aktiv
+            </label>
+            <div>
+              <label className="label">Wochentag</label>
+              <select name="notifyWeeklyDay" defaultValue={String(weeklyDay)} className="input w-auto">
+                {WEEKDAYS.map((w, i) => (
+                  <option key={i} value={i}>{w}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Uhrzeit (UTC)</label>
+              <select name="notifyWeeklyHour" defaultValue={String(weeklyHour)} className="input w-auto">
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+                ))}
+              </select>
+            </div>
+            <button className="btn-secondary" type="submit">Wochenversand speichern</button>
+          </form>
+          <p className="mt-2 text-xs text-slate-400">
+            {smtpConfigured ? (
+              <span className="text-emerald-600">SMTP konfiguriert ✓</span>
+            ) : (
+              <span className="text-amber-600">SMTP fehlt — bitte SMTP_HOST/USER/PASS als Umgebungsvariablen setzen.</span>
+            )}
+            {s["notify.lastWeeklySent"] && ` · Zuletzt versendet: ${new Date(s["notify.lastWeeklySent"]).toLocaleString("de-DE")}`}
+            {" · Hinweis: Uhrzeit in UTC (DE = UTC+1/+2)."}
+          </p>
+        </div>
       </div>
 
       {/* sevDesk */}

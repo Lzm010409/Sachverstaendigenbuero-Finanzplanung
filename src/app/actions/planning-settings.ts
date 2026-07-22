@@ -25,6 +25,14 @@ export async function savePlanningSettings(formData: FormData): Promise<void> {
   if (formData.has("notifyEmail")) {
     entries["notify.email"] = String(formData.get("notifyEmail") ?? "").trim();
   }
+  // Wöchentlicher Versand (nur wenn dieses Formular gesendet wurde).
+  if (formData.has("notifyWeeklySection")) {
+    entries["notify.weekly"] = formData.get("notifyWeekly") === "on" ? "true" : "false";
+    const day = Number(formData.get("notifyWeeklyDay"));
+    if (Number.isInteger(day) && day >= 0 && day <= 6) entries["notify.weeklyDay"] = String(day);
+    const hour = Number(formData.get("notifyWeeklyHour"));
+    if (Number.isInteger(hour) && hour >= 0 && hour <= 23) entries["notify.weeklyHour"] = String(hour);
+  }
 
   await Promise.all(
     Object.entries(entries).map(([key, value]) =>

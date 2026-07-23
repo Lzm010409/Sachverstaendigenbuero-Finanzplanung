@@ -1,17 +1,8 @@
 import { prisma } from "@/lib/db";
-import { formatCents } from "@/lib/money";
-import { deletePlannedItem, togglePlannedItem } from "@/app/actions/planning";
 import { PlannedForm } from "./planned-form";
+import { PlannedRow } from "./planned-row";
 
 export const dynamic = "force-dynamic";
-
-const RHYTHM: Record<string, string> = {
-  ONCE: "einmalig",
-  WEEKLY: "wöchentlich",
-  MONTHLY: "monatlich",
-  QUARTERLY: "quartalsweise",
-  YEARLY: "jährlich",
-};
 
 export default async function PlanningPage() {
   const [items, categories] = await Promise.all([
@@ -53,41 +44,22 @@ export default async function PlanningPage() {
               </thead>
               <tbody>
                 {items.map((p) => (
-                  <tr key={p.id} className={`border-b border-slate-50 ${p.active ? "" : "opacity-50"}`}>
-                    <td className="td font-medium">
-                      {p.name}
-                      {p.category && (
-                        <span className="ml-2 text-xs text-slate-400">{p.category.name}</span>
-                      )}
-                    </td>
-                    <td className="td">
-                      {RHYTHM[p.recurrence]}
-                      {p.interval > 1 ? ` (×${p.interval})` : ""}
-                    </td>
-                    <td className="td">{new Date(p.startDate).toLocaleDateString("de-DE")}</td>
-                    <td className="td">
-                      {p.endDate ? new Date(p.endDate).toLocaleDateString("de-DE") : "offen"}
-                    </td>
-                    <td
-                      className={`td text-right font-semibold ${p.amount < 0 ? "text-red-600" : "text-emerald-600"}`}
-                    >
-                      {formatCents(p.amount)}
-                    </td>
-                    <td className="td">
-                      <div className="flex justify-end gap-3">
-                        <form action={togglePlannedItem}>
-                          <input type="hidden" name="id" value={p.id} />
-                          <button className="text-xs text-slate-400 hover:text-brand">
-                            {p.active ? "pausieren" : "aktivieren"}
-                          </button>
-                        </form>
-                        <form action={deletePlannedItem}>
-                          <input type="hidden" name="id" value={p.id} />
-                          <button className="text-xs text-slate-400 hover:text-red-600">löschen</button>
-                        </form>
-                      </div>
-                    </td>
-                  </tr>
+                  <PlannedRow
+                    key={p.id}
+                    item={{
+                      id: p.id,
+                      name: p.name,
+                      amount: p.amount,
+                      recurrence: p.recurrence,
+                      interval: p.interval,
+                      startDate: p.startDate.toISOString(),
+                      endDate: p.endDate ? p.endDate.toISOString() : null,
+                      categoryId: p.categoryId,
+                      categoryName: p.category?.name ?? null,
+                      active: p.active,
+                    }}
+                    categories={categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))}
+                  />
                 ))}
               </tbody>
             </table>

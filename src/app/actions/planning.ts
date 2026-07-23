@@ -69,6 +69,35 @@ export async function createPlannedFromSuggestion(formData: FormData): Promise<v
   revalidatePath("/");
 }
 
+const updateSchema = schema.extend({ id: z.string().min(1) });
+
+export async function updatePlannedItem(formData: FormData): Promise<FormState> {
+  const parsed = updateSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.errors[0]?.message };
+  const d = parsed.data;
+  const cents = parseAmountToCents(d.amount);
+  if (cents == null) return { error: "Betrag unlesbar" };
+  const signed = d.direction === "out" ? -Math.abs(cents) : Math.abs(cents);
+
+  await prisma.plannedItem.update({
+    where: { id: d.id },
+    data: {
+      name: d.name,
+      amount: signed,
+      recurrence: d.recurrence,
+      interval: Math.max(1, Number(d.interval) || 1),
+      startDate: startOfDayUTC(new Date(d.startDate)),
+      endDate: d.endDate ? startOfDayUTC(new Date(d.endDate)) : null,
+      categoryId: d.categoryId || null,
+      note: d.note || null,
+    },
+  });
+  revalidatePath("/planning");
+  revalidatePath("/plan-check");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 export async function togglePlannedItem(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;

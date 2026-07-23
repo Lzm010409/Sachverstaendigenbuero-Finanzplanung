@@ -520,13 +520,19 @@ export interface BudgetStatus {
  * Hochrechnung aufs Monatsende (linear nach verstrichenen Tagen). Für Ausgaben
  * ist Überschreitung ein Risiko, für Einnahmen ist Zielerreichung positiv.
  */
-export async function getBudgetStatus(): Promise<BudgetStatus> {
+export async function getBudgetStatus(monthOffset = 0): Promise<BudgetStatus> {
   const today = todayUTC();
-  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() + monthOffset, 1));
   const monthEnd = addMonths(monthStart, 1);
   const daysInMonth = Math.round((monthEnd.getTime() - monthStart.getTime()) / 86_400_000);
-  const daysElapsed = Math.min(daysInMonth, today.getUTCDate());
+  const isCurrent = monthOffset === 0;
+  const isPast = monthEnd.getTime() <= today.getTime();
+  // Vergangene Monate sind voll abgelaufen (Hochrechnung = Ist); der laufende
+  // Monat wird linear hochgerechnet; künftige Monate haben (noch) kein Ist.
+  const daysElapsed = isCurrent ? Math.min(daysInMonth, today.getUTCDate()) : isPast ? daysInMonth : 0;
   const progress = Math.max(daysElapsed / daysInMonth, 1 / daysInMonth);
+  // Stichtag für die Budget-Gültigkeit: im laufenden Monat „heute", sonst Monatsanfang.
+  const ref = isCurrent ? today : monthStart;
 
   const [budgets, txs] = await Promise.all([
     prisma.budget.findMany({
@@ -551,7 +557,7 @@ export async function getBudgetStatus(): Promise<BudgetStatus> {
   const perCat = new Map<string, { monthlyBudget: number; name: string; color: string; kind: "INCOME" | "EXPENSE" }>();
   for (const b of budgets) {
     if (!b.category) continue;
-    if (!isBudgetActiveOn(b, today)) continue;
+    if (!isBudgetActiveOn(b, ref)) continue;
     const monthly = Math.round(budgetAnnualCents(b.amount, b.period) / 12);
     const prev = perCat.get(b.category.id);
     if (prev) prev.monthlyBudget += monthly;
@@ -576,7 +582,7 @@ export async function getBudgetStatus(): Promise<BudgetStatus> {
 
   const expenseRows = rows.filter((r) => r.kind === "EXPENSE");
   return {
-    monthLabel: `${MONTHS_LONG[today.getUTCMonth()]} ${today.getUTCFullYear()}`,
+    monthLabel: `${MONTHS_LONG[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`,
     daysElapsed,
     daysInMonth,
     rows: rows.sort((a, b) => b.projectedPct - a.projectedPct),

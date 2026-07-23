@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { getBudgetStatus, getCashflowMatrix, getKpis, type CashflowCatRow, type CashflowMonth } from "@/lib/analytics";
+import { getBudgetStatus, getCashflowMatrix, type CashflowCatRow, type CashflowMonth } from "@/lib/analytics";
 import { getForecast } from "@/lib/queries";
+import { getDashboardKpis, DEFAULT_KPI_IDS } from "@/lib/dashboard-kpis";
 import { getPlanningSettings, findThresholdBreach } from "@/lib/planning";
 import { formatCents } from "@/lib/money";
 import { budgetCellColor } from "@/lib/budget-color";
 import { CashflowChart } from "@/components/cashflow-chart";
 import { BudgetStatusCard } from "@/components/budget-status-card";
+import { KpiGrid } from "@/components/kpi-grid";
 
 export const dynamic = "force-dynamic";
 
@@ -36,45 +38,6 @@ function BudgetPctCell({ row }: { row: CashflowCatRow }) {
       {pct} %
     </td>
   );
-}
-
-function Stat({
-  label,
-  value,
-  tone = "default",
-  hint,
-  href,
-}: {
-  label: string;
-  value: string;
-  tone?: "default" | "positive" | "negative" | "warning";
-  hint?: string;
-  href?: string;
-}) {
-  const toneClass =
-    tone === "negative"
-      ? "text-red-600"
-      : tone === "positive"
-        ? "text-emerald-600"
-        : tone === "warning"
-          ? "text-amber-600"
-          : "text-slate-900";
-  const inner = (
-    <>
-      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
-      <div className={`mt-1 text-xl font-bold ${toneClass}`}>{value}</div>
-      {hint && <div className="mt-0.5 text-xs text-slate-400">{hint}</div>}
-    </>
-  );
-  if (href) {
-    return (
-      <Link href={href} className="card block transition hover:ring-2 hover:ring-brand/30">
-        {inner}
-        <div className="mt-1 text-xs text-brand">Details →</div>
-      </Link>
-    );
-  }
-  return <div className="card">{inner}</div>;
 }
 
 function Cell({ value, month, tone }: { value: number; month: CashflowMonth; tone?: "in" | "out" }) {
@@ -140,18 +103,28 @@ function SummaryRow({
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ offset?: string }>;
+  searchParams: Promise<{ offset?: string; bm?: string }>;
 }) {
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
-  const [kpis, matrix, forecast, planning, budgetStatus] = await Promise.all([
-    getKpis(),
+  const bm = Math.min(0, Math.max(-24, Number(sp.bm) || 0)); // Budget-Monat (0 = aktuell, negativ = zurück)
+  const [kpiList, matrix, forecast, planning, budgetStatus] = await Promise.all([
+    getDashboardKpis(),
     getCashflowMatrix(6, 6, offset),
     getForecast(180),
     getPlanningSettings(),
-    getBudgetStatus(),
+    getBudgetStatus(bm),
   ]);
   const { months } = matrix;
+
+  // Budget-Monats-Navigation (behält den Cashflow-Offset bei).
+  const bmQs = (o: number) => {
+    const p = new URLSearchParams();
+    if (offset > 0) p.set("offset", String(offset));
+    if (o !== 0) p.set("bm", String(o));
+    const s = p.toString();
+    return s ? `/?${s}` : "/";
+  };
   const breach = findThresholdBreach(forecast, planning.minLiquidityCents);
   const rangeLabel = `${months[0]?.label} – ${months[months.length - 1]?.label}`;
   const qs = (o: number) => (o > 0 ? `/?offset=${o}` : "/");
@@ -185,18 +158,7 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        <Stat label="Verfügbare Liquidität" value={formatCents(kpis.currentBalance)} tone={kpis.currentBalance < 0 ? "negative" : "default"} href="/drilldown?metric=balance" />
-        <Stat label="Ø Einnahmen / Monat" value={formatCents(kpis.avgMonthlyIncome)} tone="positive" hint="letzte 3 Monate" href="/drilldown?metric=income3m" />
-        <Stat label="Ø Ausgaben / Monat" value={formatCents(-kpis.avgMonthlyExpense)} hint="letzte 3 Monate" href="/drilldown?metric=expense3m" />
-        <Stat
-          label="Reichweite"
-          value={kpis.runwayMonths == null ? "∞" : `${kpis.runwayMonths} Mon.`}
-          tone={kpis.runwayMonths != null && kpis.runwayMonths < 6 ? "warning" : "default"}
-          href="/drilldown?metric=runway"
-        />
-        <Stat label="Working Capital" value={formatCents(kpis.workingCapital)} tone={kpis.workingCapital < 0 ? "negative" : "default"} hint="Saldo + Ford. − Verb." href="/drilldown?metric=workingCapital" />
-      </div>
+      <KpiGrid kpis={kpiList} defaultIds={DEFAULT_KPI_IDS} />
 
       {warnNegative && lowestFuture && (
         <div className="card flex items-start gap-3 border-red-200 bg-red-50">
@@ -245,7 +207,12 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      <BudgetStatusCard status={budgetStatus} />
+      <BudgetStatusCard
+        status={budgetStatus}
+        prevHref={bmQs(bm - 1)}
+        nextHref={bmQs(Math.min(0, bm + 1))}
+        canNext={bm < 0}
+      />
 
       <div className="card overflow-x-auto p-0">
         <table className="w-full border-collapse">

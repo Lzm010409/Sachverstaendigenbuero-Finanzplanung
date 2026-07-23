@@ -18,7 +18,6 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string; icon: s
       { href: "/forecast", label: "13-Wochen-Vorschau", icon: "🔮" },
       { href: "/calendar", label: "Fälligkeitskalender", icon: "📅" },
       { href: "/planning", label: "Planung", icon: "🗓️" },
-      { href: "/recurring", label: "Wiederkehrer", icon: "🔁" },
       { href: "/scenarios", label: "Szenarien", icon: "🎚️" },
       { href: "/scenario-compare", label: "Szenario-Vergleich", icon: "⚖️" },
     ],
@@ -45,7 +44,7 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string; icon: s
     items: [
       { href: "/breakdown", label: "Auswertung", icon: "📈" },
       { href: "/plan-actual", label: "Plan/Ist", icon: "📐" },
-      { href: "/plan-check", label: "Plan-Check", icon: "🧷" },
+      { href: "/plan-check", label: "Planungs-Check", icon: "🧷" },
       { href: "/tax", label: "Steuer-Vorschau", icon: "🧮" },
       { href: "/concentration", label: "Klumpenrisiko", icon: "🎯" },
       { href: "/forecast-accuracy", label: "Prognose-Güte", icon: "📉" },

@@ -8,6 +8,7 @@ import {
   createRule,
   resetAllTransactionCategories,
 } from "@/app/actions/categories";
+import { RuleBuilder, type AccountOpt } from "./rule-builder";
 
 export function CategoryForm() {
   const ref = useRef<HTMLFormElement>(null);
@@ -93,56 +94,37 @@ export function CategorySelect({
   );
 }
 
-export function RuleForm({ categories }: { categories: CatOption[] }) {
-  const ref = useRef<HTMLFormElement>(null);
+export function RuleForm({ categories, accounts }: { categories: CatOption[]; accounts: AccountOpt[] }) {
+  // Beim Zurücksetzen den Builder über einen Key neu mounten (leert den Baum).
+  const [formKey, setFormKey] = useState(0);
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => createRule(fd),
     {},
   );
   useEffect(() => {
-    if (state?.ok) ref.current?.reset();
+    if (state?.ok) setFormKey((k) => k + 1);
   }, [state]);
 
   return (
-    <form ref={ref} action={action} className="flex flex-wrap items-end gap-3">
+    <form key={formKey} action={action} className="space-y-3">
       <div>
-        <label className="label">Wenn Feld</label>
-        <select name="field" className="input" defaultValue="PURPOSE">
-          <option value="PURPOSE">Verwendungszweck</option>
-          <option value="COUNTERPARTY">Gegenpartei</option>
-        </select>
+        <label className="label">Bedingung (beliebig verschachtelbar mit UND / ODER / NICHT)</label>
+        <RuleBuilder name="conditions" accounts={accounts} />
       </div>
-      <div className="min-w-[150px] flex-1">
-        <label className="label">enthält / Regex (optional)</label>
-        <input name="pattern" className="input" placeholder="z.B. miete oder /amazon/" />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="min-w-[160px]">
+          <label className="label">→ Kategorie</label>
+          <CategorySelect name="categoryId" categories={categories} required />
+        </div>
+        <div className="w-20">
+          <label className="label">Priorität</label>
+          <input name="priority" type="number" className="input" defaultValue={100} title="kleiner = zuerst geprüft" />
+        </div>
+        {state?.error && <p className="w-full text-sm text-red-600">{state.error}</p>}
+        <button type="submit" className="btn-primary" disabled={pending}>
+          {pending ? "…" : "Regel anlegen"}
+        </button>
       </div>
-      <div className="w-28">
-        <label className="label">Betrag</label>
-        <select name="amountOp" className="input" defaultValue="">
-          <option value="">—</option>
-          <option value="GT">&gt;</option>
-          <option value="GTE">≥</option>
-          <option value="LT">&lt;</option>
-          <option value="LTE">≤</option>
-          <option value="EQ">=</option>
-        </select>
-      </div>
-      <div className="w-24">
-        <label className="label">Wert (€)</label>
-        <input name="amountValue" className="input" placeholder="0,00" inputMode="decimal" />
-      </div>
-      <div className="min-w-[160px]">
-        <label className="label">Kategorie</label>
-        <CategorySelect name="categoryId" categories={categories} required />
-      </div>
-      <div className="w-16">
-        <label className="label">Prio</label>
-        <input name="priority" type="number" className="input" defaultValue={100} />
-      </div>
-      {state?.error && <p className="w-full text-sm text-red-600">{state.error}</p>}
-      <button type="submit" className="btn-primary" disabled={pending}>
-        {pending ? "…" : "Regel"}
-      </button>
     </form>
   );
 }

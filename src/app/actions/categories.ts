@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { parseAmountToCents } from "@/lib/money";
+import { toMatchableRule } from "@/lib/categorize";
+import { type Node, parseTree } from "@/lib/rule-expr";
 import type { FormState } from "./types";
 
 // Kategorien sind reine Klassifizierungs-Labels (Name, Art, Farbe). Das
@@ -73,35 +75,32 @@ export async function purgeCategory(formData: FormData) {
 
 const ruleSchema = z.object({
   categoryId: z.string().min(1, "Kategorie erforderlich"),
-  field: z.enum(["COUNTERPARTY", "PURPOSE"]),
-  pattern: z.string().optional(),
-  amountOp: z.enum(["", "GT", "LT", "GTE", "LTE", "EQ"]).optional(),
-  amountValue: z.string().optional(),
+  conditions: z.string().min(1, "Bedingung erforderlich"),
   priority: z.string().optional(),
 });
+
+// Validiert den eingehenden Bedingungs-Baum (JSON) und gibt ihn geparst zurück.
+function validateConditions(json: string): { tree: Node } | { error: string } {
+  const tree = parseTree(json);
+  if (!tree) return { error: "Ungültige oder leere Bedingung." };
+  // Wurzel muss mindestens eine Bedingung enthalten.
+  if (tree.type === "group" && tree.children.length === 0) {
+    return { error: "Mindestens eine Bedingung angeben." };
+  }
+  return { tree };
+}
 
 export async function createRule(formData: FormData): Promise<FormState> {
   const parsed = ruleSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.errors[0]?.message };
   const d = parsed.data;
-  const pattern = (d.pattern ?? "").trim();
-  const amountOp = d.amountOp || null;
-  const amountValue = amountOp ? parseAmountToCents(d.amountValue ?? "") : null;
-
-  if (!pattern && amountOp == null) {
-    return { error: "Mindestens ein Muster oder eine Betrags-Bedingung angeben." };
-  }
-  if (amountOp && amountValue == null) {
-    return { error: "Betrag für die Bedingung angeben." };
-  }
+  const v = validateConditions(d.conditions);
+  if ("error" in v) return { error: v.error };
 
   await prisma.rule.create({
     data: {
       categoryId: d.categoryId,
-      field: d.field,
-      pattern: pattern || null,
-      amountOp,
-      amountValue,
+      conditions: v.tree as Prisma.InputJsonValue,
       priority: Number(d.priority) || 100,
     },
   });
@@ -122,25 +121,14 @@ export async function updateRule(formData: FormData): Promise<FormState> {
   const parsed = ruleUpdateSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.errors[0]?.message };
   const d = parsed.data;
-  const pattern = (d.pattern ?? "").trim();
-  const amountOp = d.amountOp || null;
-  const amountValue = amountOp ? parseAmountToCents(d.amountValue ?? "") : null;
-
-  if (!pattern && amountOp == null) {
-    return { error: "Mindestens ein Muster oder eine Betrags-Bedingung angeben." };
-  }
-  if (amountOp && amountValue == null) {
-    return { error: "Betrag für die Bedingung angeben." };
-  }
+  const v = validateConditions(d.conditions);
+  if ("error" in v) return { error: v.error };
 
   await prisma.rule.update({
     where: { id: d.id },
     data: {
       categoryId: d.categoryId,
-      field: d.field,
-      pattern: pattern || null,
-      amountOp,
-      amountValue,
+      conditions: v.tree as Prisma.InputJsonValue,
       priority: Number(d.priority) || 100,
     },
   });
@@ -173,13 +161,14 @@ async function bulkAssign(byCat: Map<string, string[]>): Promise<number> {
 /** Wendet alle aktiven Regeln auf noch nicht kategorisierte Umsätze an (Batch). */
 export async function applyRulesToUncategorized() {
   const { categorize } = await import("@/lib/categorize");
-  const [rules, txs] = await Promise.all([
+  const [ruleRows, txs] = await Promise.all([
     prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } }),
     prisma.transaction.findMany({
       where: { categoryId: null },
-      select: { id: true, counterparty: true, purpose: true, amount: true },
+      select: { id: true, counterparty: true, purpose: true, amount: true, accountId: true, bookingDate: true },
     }),
   ]);
+  const rules = ruleRows.map(toMatchableRule);
   const byCat = new Map<string, string[]>();
   for (const tx of txs) {
     const categoryId = categorize(tx, rules);

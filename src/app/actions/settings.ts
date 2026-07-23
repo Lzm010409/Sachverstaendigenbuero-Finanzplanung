@@ -17,7 +17,7 @@ import {
 } from "@/lib/sevdesk";
 import { fetchOrganizations, fetchPersons } from "@/lib/pipedrive";
 import { importHash } from "@/lib/import/hash";
-import { categorize } from "@/lib/categorize";
+import { categorize, toMatchableRule } from "@/lib/categorize";
 
 export async function toggleIntegration(formData: FormData) {
   const name = String(formData.get("name") ?? "");
@@ -63,7 +63,9 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
     return { error: `Verbindung zu sevDesk fehlgeschlagen: ${(e as Error).message}` };
   }
 
-  const rules = await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } });
+  const rules = (
+    await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } })
+  ).map(toMatchableRule);
   let imported = 0;
   let categorized = 0;
   let reconciled = 0;
@@ -106,7 +108,7 @@ export async function syncSevdesk(): Promise<SevdeskSyncResult> {
         counterparty: t.counterparty.length > 120 ? t.counterparty.slice(0, 120) : t.counterparty,
         purpose: t.purpose.length > 180 ? t.purpose.slice(0, 180) : t.purpose,
       };
-      const categoryId = categorize(tx, rules);
+      const categoryId = categorize({ ...tx, accountId: account!.id }, rules);
       if (categoryId) categorized++;
       return {
         accountId: account!.id,

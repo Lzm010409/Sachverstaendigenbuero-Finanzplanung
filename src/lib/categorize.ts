@@ -1,77 +1,43 @@
-export type AmountOp = "GT" | "LT" | "GTE" | "LTE" | "EQ";
+import { type EvalContext, type Node, evalNode, isValidTree } from "./rule-expr";
 
 export interface MatchableRule {
   id: string;
   categoryId: string;
-  field: "COUNTERPARTY" | "PURPOSE";
-  pattern: string | null;
-  amountOp: AmountOp | null;
-  amountValue: number | null; // Cent, vorzeichenbehaftet
+  conditions: Node | null; // Bedingungs-Baum (siehe rule-expr.ts)
   priority: number;
   active: boolean;
 }
 
-export interface Categorizable {
-  counterparty: string;
-  purpose: string;
-  amount: number; // Cent, vorzeichenbehaftet
+// Wandelt eine Prisma-Regel (conditions als JsonValue) in eine MatchableRule um.
+// Ungültige/leere Bäume werden zu null (Regel greift dann nie).
+export function toMatchableRule(r: {
+  id: string;
+  categoryId: string;
+  conditions: unknown;
+  priority: number;
+  active: boolean;
+}): MatchableRule {
+  return {
+    id: r.id,
+    categoryId: r.categoryId,
+    conditions: isValidTree(r.conditions) ? r.conditions : null,
+    priority: r.priority,
+    active: r.active,
+  };
 }
 
-function toMatcher(pattern: string): (value: string) => boolean {
-  const p = pattern.trim();
-  const re = /^\/(.+)\/([a-zA-Z]*)$/.exec(p);
-  if (re) {
-    try {
-      // Flags normalisieren (klein) und "i" immer erzwingen -> Regeln sind
-      // grundsätzlich case-insensitiv; doppelte Flags werden entfernt.
-      const flags = Array.from(new Set((re[2].toLowerCase() + "i").split(""))).join("");
-      const rx = new RegExp(re[1], flags);
-      return (value) => rx.test(value);
-    } catch {
-      // ungültige Regex -> als Teilstring behandeln
-    }
-  }
-  const needle = p.toLowerCase();
-  return (value) => value.toLowerCase().includes(needle);
-}
-
-function amountMatches(amount: number, op: AmountOp, value: number): boolean {
-  switch (op) {
-    case "GT":
-      return amount > value;
-    case "LT":
-      return amount < value;
-    case "GTE":
-      return amount >= value;
-    case "LTE":
-      return amount <= value;
-    case "EQ":
-      return amount === value;
-    default:
-      return false;
-  }
-}
+// Ein kategorisierbarer Umsatz. accountId/bookingDate sind optional – Regeln mit
+// Konto-/Datums-Bedingungen greifen nur, wenn diese Felder vorhanden sind.
+export type Categorizable = EvalContext;
 
 /**
  * Findet die passende Kategorie für einen Umsatz. Regeln werden nach priority
- * (aufsteigend) geprüft; die erste passende gewinnt. Eine Regel kann eine
- * Text-Bedingung (Feld enthält Muster) und/oder eine Betrags-Bedingung haben;
- * gesetzte Bedingungen müssen alle zutreffen.
+ * (aufsteigend) geprüft; die erste Regel, deren Bedingungs-Baum zutrifft, gewinnt.
  */
 export function categorize(tx: Categorizable, rules: MatchableRule[]): string | null {
-  const active = rules.filter((r) => r.active).sort((a, b) => a.priority - b.priority);
+  const active = rules.filter((r) => r.active && r.conditions).sort((a, b) => a.priority - b.priority);
   for (const rule of active) {
-    const hasText = !!rule.pattern && rule.pattern.trim() !== "";
-    const hasAmount = rule.amountOp != null && rule.amountValue != null;
-    if (!hasText && !hasAmount) continue; // leere Regel ignorieren
-
-    if (hasText) {
-      const value = rule.field === "COUNTERPARTY" ? tx.counterparty : tx.purpose;
-      if (!value || !toMatcher(rule.pattern!)(value)) continue;
-    }
-    if (hasAmount && !amountMatches(tx.amount, rule.amountOp!, rule.amountValue!)) continue;
-
-    return rule.categoryId;
+    if (evalNode(rule.conditions as Node, tx)) return rule.categoryId;
   }
   return null;
 }

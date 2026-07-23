@@ -44,8 +44,10 @@ async function main() {
     select: { id: true, counterparty: true, purpose: true, amount: true },
   });
   if (giroWrong.length) {
-    const { categorize } = await import("@/lib/categorize");
-    const rules = await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null, isTransfer: false } } });
+    const { categorize, toMatchableRule } = await import("@/lib/categorize");
+    const rules = (
+      await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null, isTransfer: false } } })
+    ).map(toMatchableRule);
     for (const t of giroWrong) {
       const newCat = categorize(t, rules); // Geldtransfer ist nicht unter den Regeln
       await prisma.transaction.update({ where: { id: t.id }, data: { categoryId: newCat } });

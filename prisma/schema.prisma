@@ -40,19 +40,6 @@ enum Recurrence {
   YEARLY
 }
 
-enum RuleField {
-  COUNTERPARTY // Empfänger/Auftraggeber
-  PURPOSE // Verwendungszweck
-}
-
-enum RuleAmountOp {
-  GT // größer als
-  LT // kleiner als
-  GTE // größer/gleich
-  LTE // kleiner/gleich
-  EQ // gleich
-}
-
 enum OpenItemKind {
   RECEIVABLE // Forderung (wir erhalten Geld)
   PAYABLE // Verbindlichkeit (wir zahlen)
@@ -166,20 +153,17 @@ model Budget {
 }
 
 // Regel zur automatischen Kategorisierung importierter Umsätze.
+// Die Bedingung ist ein verschachtelter Ausdrucks-Baum (UND/ODER/NICHT +
+// Einzelbedingungen), gespeichert als JSON. Struktur/Auswertung: src/lib/rule-expr.ts.
 model Rule {
-  id          String        @id @default(cuid())
+  id          String   @id @default(cuid())
   categoryId  String
-  category    Category      @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  field       RuleField     @default(PURPOSE)
-  // Freitext, der (case-insensitive) im Feld enthalten sein muss. Optional als /regex/.
-  // Kann leer sein, wenn die Regel nur über den Betrag greift.
-  pattern     String?
-  // Optionale Betrags-Bedingung (vorzeichenbehaftet, in Cent).
-  amountOp    RuleAmountOp?
-  amountValue Int?
-  priority    Int           @default(100) // kleiner = wird zuerst geprüft
-  active      Boolean       @default(true)
-  createdAt   DateTime      @default(now())
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  // Bedingungs-Baum (Group/Condition). Null = inaktive/leere Regel (greift nie).
+  conditions  Json?
+  priority    Int      @default(100) // kleiner = wird zuerst geprüft
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
   @@index([active, priority])
 }

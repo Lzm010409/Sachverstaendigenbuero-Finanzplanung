@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { parseCsv } from "../import/csv";
-import { categorize } from "../categorize";
+import { categorize, type MatchableRule } from "../categorize";
+import type { Node } from "../rule-expr";
+
+// Kleine Baumbauer für die Tests.
+const text = (field: string, op: string, value: string): Node => ({ type: "text", field: field as never, op: op as never, value });
+const amount = (field: string, op: string, value: number, value2?: number): Node => ({ type: "amount", field: field as never, op: op as never, value, value2 });
+const group = (op: "AND" | "OR", children: Node[], not = false): Node => ({ type: "group", op, not, children });
+const ruleOf = (categoryId: string, conditions: Node, priority = 100): MatchableRule => ({ id: categoryId, categoryId, priority, active: true, conditions });
 
 describe("parseCsv", () => {
   it("parst ein Sparkassen-ähnliches Format mit Semikolon", () => {
@@ -31,20 +38,9 @@ describe("parseCsv", () => {
 });
 
 describe("categorize", () => {
-  const rule = (o: Partial<Parameters<typeof categorize>[1][number]> = {}) => ({
-    id: "1",
-    categoryId: "c",
-    field: "PURPOSE" as const,
-    pattern: null,
-    amountOp: null,
-    amountValue: null,
-    priority: 100,
-    active: true,
-    ...o,
-  });
   const rules = [
-    rule({ id: "1", categoryId: "miete", field: "PURPOSE", pattern: "miete", priority: 10 }),
-    rule({ id: "2", categoryId: "gehalt", field: "COUNTERPARTY", pattern: "/muster/", priority: 20 }),
+    { id: "1", categoryId: "miete", priority: 10, active: true, conditions: text("PURPOSE", "CONTAINS", "miete") },
+    { id: "2", categoryId: "gehalt", priority: 20, active: true, conditions: text("COUNTERPARTY", "REGEX", "muster") },
   ];
   it("matcht per Teilstring im Verwendungszweck", () => {
     expect(categorize({ counterparty: "X", purpose: "Buero Miete Juli", amount: -100 }, rules)).toBe("miete");
@@ -57,20 +53,21 @@ describe("categorize", () => {
   });
 
   it("betrags-Bedingung: nur positive Beträge (Einnahmen)", () => {
-    const r = [rule({ categoryId: "einnahme", amountOp: "GT", amountValue: 0 })];
+    const r = [ruleOf("einnahme", amount("AMOUNT", "GT", 0))];
     expect(categorize({ counterparty: "X", purpose: "y", amount: 5000 }, r)).toBe("einnahme");
     expect(categorize({ counterparty: "X", purpose: "y", amount: -5000 }, r)).toBeNull();
   });
 
   it("kombiniert Text UND Betrag (beide müssen passen)", () => {
-    const r = [rule({ categoryId: "grossmiete", pattern: "miete", amountOp: "LTE", amountValue: -100000 })];
+    const r = [
+      ruleOf("grossmiete", group("AND", [text("PURPOSE", "CONTAINS", "miete"), amount("AMOUNT", "LTE", -100000)])),
+    ];
     expect(categorize({ counterparty: "", purpose: "Miete Büro", amount: -150000 }, r)).toBe("grossmiete");
-    // Text passt, Betrag nicht (zu klein im Betrag = -50000 > -100000)
     expect(categorize({ counterparty: "", purpose: "Miete Büro", amount: -50000 }, r)).toBeNull();
   });
 
   it("EQ trifft exakten Betrag", () => {
-    const r = [rule({ categoryId: "abo", amountOp: "EQ", amountValue: -8990 })];
+    const r = [ruleOf("abo", amount("AMOUNT", "EQ", -8990))];
     expect(categorize({ counterparty: "", purpose: "", amount: -8990 }, r)).toBe("abo");
     expect(categorize({ counterparty: "", purpose: "", amount: -8991 }, r)).toBeNull();
   });

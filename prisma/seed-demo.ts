@@ -1,4 +1,8 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
+import { type TextField, type TextOp, textTree } from "../src/lib/rule-expr";
+
+const cond = (field: TextField, value: string, op: TextOp = "CONTAINS") =>
+  textTree(field, op, value) as unknown as Prisma.InputJsonValue;
 
 // Realistische Demo-Daten für ein Sachverständigenbüro.
 // Idempotent: läuft nur, wenn noch keine Konten existieren (überspringt sonst),
@@ -107,11 +111,11 @@ async function main() {
   // --- Auto-Regeln ---
   await prisma.rule.createMany({
     data: [
-      { categoryId: cat["Miete / Büro"], field: "PURPOSE", pattern: "miete", priority: 10 },
-      { categoryId: cat["Versicherungen"], field: "PURPOSE", pattern: "versicherung", priority: 20 },
-      { categoryId: cat["Kfz / Reisekosten"], field: "PURPOSE", pattern: "tankstelle", priority: 30 },
-      { categoryId: cat["Steuern / Abgaben"], field: "COUNTERPARTY", pattern: "finanzamt", priority: 40 },
-      { categoryId: cat["Software / IT"], field: "COUNTERPARTY", pattern: "/microsoft|adobe|datev/", priority: 50 },
+      { categoryId: cat["Miete / Büro"], conditions: cond("PURPOSE", "miete"), priority: 10 },
+      { categoryId: cat["Versicherungen"], conditions: cond("PURPOSE", "versicherung"), priority: 20 },
+      { categoryId: cat["Kfz / Reisekosten"], conditions: cond("PURPOSE", "tankstelle"), priority: 30 },
+      { categoryId: cat["Steuern / Abgaben"], conditions: cond("COUNTERPARTY", "finanzamt"), priority: 40 },
+      { categoryId: cat["Software / IT"], conditions: cond("COUNTERPARTY", "/microsoft|adobe|datev/"), priority: 50 },
     ],
   });
 

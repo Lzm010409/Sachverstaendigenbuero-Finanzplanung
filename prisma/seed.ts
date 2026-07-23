@@ -1,4 +1,5 @@
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
+import { singleTextValue, parseTree, textTree } from "../src/lib/rule-expr";
 
 const prisma = new PrismaClient();
 
@@ -35,11 +36,15 @@ async function main() {
   for (const r of RULES) {
     const categoryId = byName.get(r.catName);
     if (!categoryId) continue;
-    const exists = await prisma.rule.findFirst({
-      where: { categoryId, field: r.field, pattern: r.pattern },
+    const rules = await prisma.rule.findMany({ where: { categoryId }, select: { conditions: true } });
+    const exists = rules.some((x) => {
+      const t = singleTextValue(parseTree(JSON.stringify(x.conditions)));
+      return t?.field === r.field && t.value === r.pattern;
     });
     if (!exists) {
-      await prisma.rule.create({ data: { categoryId, field: r.field, pattern: r.pattern } });
+      await prisma.rule.create({
+        data: { categoryId, conditions: textTree(r.field, "CONTAINS", r.pattern) as unknown as Prisma.InputJsonValue },
+      });
     }
   }
 

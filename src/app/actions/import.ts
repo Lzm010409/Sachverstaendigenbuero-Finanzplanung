@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { parseStatement, type ImportFormat } from "@/lib/import";
 import { importHash } from "@/lib/import/hash";
-import { categorize } from "@/lib/categorize";
+import { categorize, toMatchableRule } from "@/lib/categorize";
 
 // Begrenzt Textlängen, damit Umsatzfelder den Speicher nicht unnötig aufblähen.
 function clip(s: string, max: number): string {
@@ -39,14 +39,16 @@ export async function importStatement(formData: FormData): Promise<ImportSummary
     return { error: "Keine Umsätze erkannt.", warnings: result.warnings, format: result.format };
   }
 
-  const rules = await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } });
+  const rules = (
+    await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } })
+  ).map(toMatchableRule);
 
   let categorized = 0;
   // Datensätze im Speicher vorbereiten (Text begrenzen, kategorisieren) und
   // per createMany in Blöcken einfügen – speicher- und WAL-schonend; Duplikate
   // werden über den Unique-Index (importHash) übersprungen.
   const data = result.transactions.map((tx) => {
-    const categoryId = categorize(tx, rules);
+    const categoryId = categorize({ ...tx, accountId }, rules);
     if (categoryId) categorized++;
     return {
       accountId,

@@ -13,6 +13,7 @@ import {
 } from "./queries";
 import { getCashflowMatrix, getCategoryBreakdown, getKpis } from "./analytics";
 import { getWeeklyForecast } from "./planning";
+import { isValidTree } from "./rule-expr";
 import { formatCents } from "./money";
 import { getPipedriveToken, getSevdeskToken } from "./settings";
 import {
@@ -138,14 +139,11 @@ async function dataIntegrity(): Promise<CheckResult[]> {
   out.push(check("cat.color", "Kategoriefarben gültig", badColor === 0 ? "pass" : "warn",
     badColor === 0 ? "ok" : `${badColor} ungültig`, badColor));
 
-  // Regeln
-  const rules = await prisma.rule.findMany({ select: { pattern: true, amountOp: true, amountValue: true } });
-  const brokenAmountRule = rules.filter((r) => r.amountOp && r.amountValue == null).length;
-  out.push(check("rule.amount", "Betragsregeln vollständig", brokenAmountRule === 0 ? "pass" : "fail",
-    brokenAmountRule === 0 ? "ok" : `${brokenAmountRule} ohne Wert`, brokenAmountRule));
-  const emptyRule = rules.filter((r) => !r.pattern?.trim() && !r.amountOp).length;
-  out.push(check("rule.empty", "Keine leeren Regeln", emptyRule === 0 ? "pass" : "warn",
-    emptyRule === 0 ? "ok" : `${emptyRule} ohne Bedingung`, emptyRule));
+  // Regeln: Bedingungs-Baum strukturell gültig?
+  const rules = await prisma.rule.findMany({ select: { conditions: true } });
+  const invalidRule = rules.filter((r) => !isValidTree(r.conditions)).length;
+  out.push(check("rule.valid", "Regel-Bedingungen gültig", invalidRule === 0 ? "pass" : "warn",
+    invalidRule === 0 ? "ok" : `${invalidRule} ungültig/leer`, invalidRule));
 
   // Offene Posten
   const openItems = await prisma.openItem.findMany({

@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import { deleteCategory, purgeCategory, restoreCategory, toggleCategoryTransfer } from "@/app/actions/categories";
 import { ApplyRulesButton, CategoryForm, ResetCategoriesButton, RuleForm, type CatOption } from "./category-forms";
 import { RuleRow } from "./rule-row";
+import type { AccountOpt } from "./rule-builder";
+import { isValidTree, type Node } from "@/lib/rule-expr";
 import { ConfirmSubmit } from "@/components/confirm-submit";
 
 export const dynamic = "force-dynamic";
@@ -80,7 +82,7 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
 }
 
 export default async function CategoriesPage() {
-  const [active, trashed, rules] = await Promise.all([
+  const [active, trashed, rules, accounts] = await Promise.all([
     prisma.category.findMany({
       where: { deletedAt: null },
       orderBy: [{ kind: "asc" }, { name: "asc" }],
@@ -92,11 +94,13 @@ export default async function CategoriesPage() {
       include: { _count: { select: { transactions: true, budgets: true } } },
     }),
     prisma.rule.findMany({ where: { category: { deletedAt: null } }, orderBy: { priority: "asc" }, include: { category: true } }),
+    prisma.account.findMany({ where: { archived: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
   const income = active.filter((c) => c.kind === "INCOME");
   const expense = active.filter((c) => c.kind === "EXPENSE");
   const catOptions: CatOption[] = active.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  const accountOptions: AccountOpt[] = accounts.map((a) => ({ id: a.id, name: a.name }));
   const now = Date.now();
 
   return (
@@ -188,16 +192,14 @@ export default async function CategoriesPage() {
           <p className="text-sm text-slate-400">Zuerst eine Kategorie anlegen.</p>
         ) : (
           <div className="space-y-4">
-            <RuleForm categories={catOptions} />
+            <RuleForm categories={catOptions} accounts={accountOptions} />
             {rules.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-100">
+                    <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
                       <th className="th">Prio</th>
-                      <th className="th">Feld</th>
-                      <th className="th">Muster</th>
-                      <th className="th">Betrag</th>
+                      <th className="th">Bedingung</th>
                       <th className="th">→ Kategorie</th>
                       <th className="th"></th>
                     </tr>
@@ -208,16 +210,14 @@ export default async function CategoriesPage() {
                         key={r.id}
                         rule={{
                           id: r.id,
-                          field: r.field,
-                          pattern: r.pattern,
-                          amountOp: r.amountOp,
-                          amountValue: r.amountValue,
+                          conditions: isValidTree(r.conditions) ? (r.conditions as Node) : null,
                           priority: r.priority,
                           active: r.active,
                           categoryId: r.categoryId,
                           categoryName: r.category.name,
                         }}
                         categories={catOptions}
+                        accounts={accountOptions}
                       />
                     ))}
                   </tbody>

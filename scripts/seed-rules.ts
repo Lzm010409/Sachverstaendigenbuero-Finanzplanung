@@ -4,8 +4,10 @@
 // Läuft im Container per SEED_RULES=true (Ausgabe über die Coolify-Logs) oder
 // lokal via `npm run seed:rules`.
 
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { categorize, type MatchableRule } from "@/lib/categorize";
+import { categorize, toMatchableRule } from "@/lib/categorize";
+import { parseTree, singleTextValue, textTree } from "@/lib/rule-expr";
 
 // [Gegenpartei-Muster, Kategoriename, Priorität]. Kleinere Priorität zuerst.
 // Spezifische Muster vor generischen. "A?" = Annahme, bitte prüfen.
@@ -101,8 +103,12 @@ const norm = (s: string) => s.normalize("NFC").trim().toLowerCase();
 async function main() {
   const cats = await prisma.category.findMany({ select: { id: true, name: true, kind: true } });
   const byName = new Map(cats.map((c) => [norm(c.name), c.id]));
-  const existing = await prisma.rule.findMany({ select: { field: true, pattern: true, categoryId: true } });
-  const seen = new Set(existing.map((r) => `${r.field}|${(r.pattern ?? "").toLowerCase()}|${r.categoryId}`));
+  const existing = await prisma.rule.findMany({ select: { conditions: true, categoryId: true } });
+  const seen = new Set<string>();
+  for (const r of existing) {
+    const t = singleTextValue(parseTree(JSON.stringify(r.conditions)));
+    if (t) seen.add(`${t.field}|${t.value.toLowerCase()}|${r.categoryId}`);
+  }
 
   let created = 0, skippedDup = 0, missingCat = 0;
   for (const [pattern, catName, priority] of RULES) {
@@ -115,7 +121,11 @@ async function main() {
     const key = `COUNTERPARTY|${pattern.toLowerCase()}|${categoryId}`;
     if (seen.has(key)) { skippedDup++; continue; }
     await prisma.rule.create({
-      data: { categoryId, field: "COUNTERPARTY", pattern, amountOp: null, amountValue: null, priority },
+      data: {
+        categoryId,
+        conditions: textTree("COUNTERPARTY", "CONTAINS", pattern) as unknown as Prisma.InputJsonValue,
+        priority,
+      },
     });
     seen.add(key);
     created++;
@@ -127,7 +137,7 @@ async function main() {
   // Umsätze in einer EINNAHME-Kategorie bleiben unangetastet (schützt die
   // bereits korrekte Erlös-Zuordnung).
   const incomeCatIds = new Set(cats.filter((c) => c.kind === "INCOME").map((c) => c.id));
-  const rules = (await prisma.rule.findMany({ where: { active: true } })) as unknown as MatchableRule[];
+  const rules = (await prisma.rule.findMany({ where: { active: true } })).map(toMatchableRule);
   const txs = await prisma.transaction.findMany({
     select: { id: true, counterparty: true, purpose: true, amount: true, categoryId: true },
   });

@@ -1,17 +1,22 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { createPlannedItem } from "@/app/actions/planning";
 import { CategoryOptions, type CatOpt } from "@/components/category-select";
 
 export function PlannedForm({ categories }: { categories: CatOpt[] }) {
   const ref = useRef<HTMLFormElement>(null);
+  const [rec, setRec] = useState("MONTHLY");
+  const once = rec === "ONCE";
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => createPlannedItem(fd),
     {},
   );
   useEffect(() => {
-    if (state?.ok) ref.current?.reset();
+    if (state?.ok) {
+      ref.current?.reset();
+      setRec("MONTHLY");
+    }
   }, [state]);
 
   return (
@@ -33,26 +38,30 @@ export function PlannedForm({ categories }: { categories: CatOpt[] }) {
       </div>
       <div>
         <label className="label">Rhythmus</label>
-        <select name="recurrence" className="input" defaultValue="MONTHLY">
-          <option value="ONCE">einmalig</option>
+        <select name="recurrence" className="input" value={rec} onChange={(e) => setRec(e.target.value)}>
+          <option value="ONCE">einmalig (datumsgenau)</option>
           <option value="WEEKLY">wöchentlich</option>
           <option value="MONTHLY">monatlich</option>
           <option value="QUARTERLY">quartalsweise</option>
           <option value="YEARLY">jährlich</option>
         </select>
       </div>
+      {!once && (
+        <div>
+          <label className="label">Intervall (jede/r n-te)</label>
+          <input name="interval" type="number" min={1} defaultValue={1} className="input" />
+        </div>
+      )}
       <div>
-        <label className="label">Intervall (jede/r n-te)</label>
-        <input name="interval" type="number" min={1} defaultValue={1} className="input" />
-      </div>
-      <div>
-        <label className="label">Ab Datum</label>
+        <label className="label">{once ? "Datum" : "Ab Datum"}</label>
         <input name="startDate" type="date" className="input" required />
       </div>
-      <div>
-        <label className="label">Bis (optional)</label>
-        <input name="endDate" type="date" className="input" />
-      </div>
+      {!once && (
+        <div>
+          <label className="label">Bis (optional)</label>
+          <input name="endDate" type="date" className="input" />
+        </div>
+      )}
       <div>
         <label className="label">Kategorie (optional)</label>
         <select name="categoryId" className="input" defaultValue="">

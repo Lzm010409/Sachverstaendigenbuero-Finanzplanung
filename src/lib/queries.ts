@@ -111,13 +111,21 @@ export async function getScenarioConfig(scenarioId?: string): Promise<ScenarioCo
 
 /** Baut die Liquiditätsvorschau über einen Horizont (Tage) aus den DB-Daten. */
 export const getForecast = cache(async (horizonDays = 90, scenarioId?: string): Promise<ForecastResult> => {
-  const [startBalance, planned, oneOffs, scenario, budgetItems] = await Promise.all([
+  const [startBalance, plannedRaw, oneOffsRaw, scenario, budgetItemsRaw, transferIds] = await Promise.all([
     getTotalBalanceCents(),
     prisma.plannedItem.findMany({ where: { active: true } }),
     getOpenItemOneOffs(),
     getScenarioConfig(scenarioId),
     getForecastBudgetItems(),
+    getTransferCategoryIds(),
   ]);
+
+  // Geldtransfers sind netto null über alle einbezogenen Konten und dürfen die
+  // Gesamt-Liquiditätsvorschau NICHT verändern (konsistent mit getCashflowMatrix).
+  const notTransfer = (categoryId: string | null | undefined) => !(categoryId && transferIds.has(categoryId));
+  const planned = plannedRaw.filter((p) => notTransfer(p.categoryId));
+  const oneOffs = oneOffsRaw.filter((o) => notTransfer(o.categoryId));
+  const budgetItems = budgetItemsRaw.filter((b) => notTransfer(b.categoryId));
 
   return buildForecast({
     startBalanceCents: startBalance,

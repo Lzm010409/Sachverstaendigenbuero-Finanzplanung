@@ -96,6 +96,18 @@ export default async function BreakdownPage({
   const rangeLabel = `${data.periods[0]?.label} – ${data.periods[data.periods.length - 1]?.label}`;
   const qs = (o: number) => `/breakdown?g=${granularity}${o > 0 ? `&offset=${o}` : ""}`;
 
+  // Gesamt-Budgetauslastung des laufenden Jahres (nur Kategorien mit Budget):
+  // Summe Ist / Summe Jahresbudget – getrennt für Einnahmen und Ausgaben.
+  const sumOver = (rows: BreakdownRow[], sel: (r: BreakdownRow) => number) =>
+    rows.filter((r) => r.annualBudget > 0).reduce((s, r) => s + sel(r), 0);
+  const incActual = sumOver(data.incomeRows, (r) => r.yearActual);
+  const incBudget = sumOver(data.incomeRows, (r) => r.annualBudget);
+  const expActual = sumOver(data.expenseRows, (r) => r.yearActual);
+  const expBudget = sumOver(data.expenseRows, (r) => r.annualBudget);
+  const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : null);
+  const incPct = pct(incActual, incBudget);
+  const expPct = pct(expActual, expBudget);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -157,6 +169,28 @@ export default async function BreakdownPage({
         Einnahmen umgekehrt). Budgets pflegst du unter <strong>Kategorien</strong>. Die Spalte „% Jahr"
         zeigt den Verbrauch des laufenden Kalenderjahres am Jahresbudget.
       </p>
+
+      {hasRows && (incPct != null || expPct != null) && (
+        <div className="fixed bottom-4 right-4 z-40 rounded-lg border border-slate-200 bg-white/95 px-4 py-2 text-sm shadow-lg backdrop-blur">
+          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Budgetauslastung (Jahr)
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="flex items-center gap-1.5 text-slate-600">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+              Einnahmen
+              <strong className="tabular-nums text-emerald-700">{incPct != null ? `${incPct} %` : "–"}</strong>
+            </span>
+            <span className="flex items-center gap-1.5 text-slate-600">
+              <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
+              Ausgaben
+              <strong className={`tabular-nums ${expPct != null && expPct > 100 ? "text-red-600" : "text-slate-800"}`}>
+                {expPct != null ? `${expPct} %` : "–"}
+              </strong>
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

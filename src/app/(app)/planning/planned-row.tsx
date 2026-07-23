@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import { deletePlannedItem, togglePlannedItem, updatePlannedItem } from "@/app/actions/planning";
+import { plannedToBudget } from "@/app/actions/convert";
 import { CategoryOptions, type CatOpt } from "@/components/category-select";
+import { TransferMenu } from "@/components/transfer-menu";
 import { formatCents } from "@/lib/money";
 
 const RHYTHM: Record<string, string> = {
@@ -116,10 +118,11 @@ export function PlannedRow({ item, categories }: { item: PlannedRowData; categor
         {formatCents(item.amount)}
       </td>
       <td className="td">
-        <div className="flex justify-end gap-3">
-          <button className="text-xs text-brand hover:underline" onClick={() => setEditing(true)}>
+        <div className="flex items-center justify-end gap-3 text-xs">
+          <button className="text-brand hover:underline" onClick={() => setEditing(true)}>
             bearbeiten
           </button>
+          <TransferMenu id={item.id} label="Budget" action={plannedToBudget} />
           <form action={togglePlannedItem}>
             <input type="hidden" name="id" value={item.id} />
             <button className="text-xs text-slate-400 hover:text-brand">

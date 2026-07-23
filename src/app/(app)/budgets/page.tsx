@@ -2,7 +2,9 @@ import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { periodShort, budgetAnnualCents, type BudgetPeriod } from "@/lib/budget";
 import { deleteBudget, purgeBudget, restoreBudget, toggleBudgetActive } from "@/app/actions/budgets";
+import { budgetToPlanned } from "@/app/actions/convert";
 import { ConfirmSubmit } from "@/components/confirm-submit";
+import { TransferMenu } from "@/components/transfer-menu";
 import type { CatOption } from "../categories/category-forms";
 import { BudgetForm, BudgetRow, DeleteBudgetButton, type BudgetView } from "./budget-forms";
 
@@ -76,6 +78,7 @@ function BudgetTable({ title, rows, categories, tone }: { title: string; rows: R
                   </div>
                 </div>
                 <div className="flex items-center gap-3 text-xs">
+                  <TransferMenu id={b.id} label="Planposten" action={budgetToPlanned} />
                   <form action={toggleBudgetActive}>
                     <input type="hidden" name="id" value={b.id} />
                     <button className="text-slate-400 hover:text-brand">{b.active ? "deaktivieren" : "aktivieren"}</button>

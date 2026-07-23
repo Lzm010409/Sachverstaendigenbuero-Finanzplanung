@@ -27,8 +27,10 @@ export function FilterMemory({ pageKey }: { pageKey: string }) {
 }
 
 // Formular, das automatisch filtert: Selects lösen sofort aus, Textfelder
-// entprellt (350 ms) bzw. mit Enter. Soft-Navigation via router.push; bestehende
-// Nicht-Filter-Parameter (z.B. size) bleiben erhalten, `page` wird verworfen
+// entprellt (350 ms) bzw. mit Enter. Nutzt eine NATIVE GET-Absendung (wie ein
+// klassisches Filter-Formular, nur ohne Button) – das rendert die Seite
+// zuverlässig gefiltert neu (reine router.push-Query-Änderungen tun das nicht
+// immer). `size` wird über ein verstecktes Feld erhalten, `page` fällt weg
 // (zurück auf Seite 1). Der reine Filter-Zustand wird je Seite gemerkt.
 export function AutoFilterForm({
   pageKey,
@@ -39,48 +41,37 @@ export function AutoFilterForm({
   className?: string;
   children: React.ReactNode;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
+  const sp = useSearchParams();
+  const size = sp.get("size");
   const ref = useRef<HTMLFormElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Filterzustand (ohne size) merken, dann nativ absenden.
   const submit = () => {
     const form = ref.current;
     if (!form) return;
-    const fd = new FormData(form);
-    // Navigation: bestehende Parameter übernehmen, page verwerfen, Filterfelder setzen.
-    const nav = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
-    nav.delete("page");
-    const filt = new URLSearchParams();
-    for (const key of new Set(fd.keys())) {
-      const v = String(fd.get(key) ?? "").trim();
-      if (v) {
-        nav.set(key, v);
-        filt.set(key, v);
-      } else {
-        nav.delete(key);
-      }
-    }
-    const filtStr = filt.toString();
     try {
-      if (filtStr) localStorage.setItem(`flt:${pageKey}`, filtStr);
+      const fd = new FormData(form);
+      const filt = new URLSearchParams();
+      for (const key of new Set(fd.keys())) {
+        if (key === "size") continue;
+        const v = String(fd.get(key) ?? "").trim();
+        if (v) filt.set(key, v);
+      }
+      const s = filt.toString();
+      if (s) localStorage.setItem(`flt:${pageKey}`, s);
       else localStorage.removeItem(`flt:${pageKey}`);
     } catch {
       /* ignorieren */
     }
-    const navStr = nav.toString();
-    router.push(navStr ? `${pathname}?${navStr}` : pathname);
+    form.requestSubmit();
   };
 
   return (
     <form
       ref={ref}
+      method="get"
       className={className}
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (timer.current) clearTimeout(timer.current);
-        submit();
-      }}
       onChange={(e) => {
         const t = e.target as HTMLElement;
         if (t.tagName === "SELECT") {
@@ -96,6 +87,7 @@ export function AutoFilterForm({
         }
       }}
     >
+      {size && <input type="hidden" name="size" value={size} />}
       {children}
     </form>
   );

@@ -1,70 +1,19 @@
 import Link from "next/link";
-import { getBudgetStatus, getCashflowMatrix, type CashflowCatRow, type CashflowMonth } from "@/lib/analytics";
+import { getBudgetStatus, getCashflowMatrix, type CashflowMonth } from "@/lib/analytics";
 import { getForecast } from "@/lib/queries";
 import { getDashboardKpis, DEFAULT_KPI_IDS } from "@/lib/dashboard-kpis";
 import { getPlanningSettings, findThresholdBreach } from "@/lib/planning";
 import { formatCents } from "@/lib/money";
-import { budgetCellColor } from "@/lib/budget-color";
 import { CashflowChart } from "@/components/cashflow-chart";
 import { BudgetStatusCard } from "@/components/budget-status-card";
 import { KpiGrid } from "@/components/kpi-grid";
+import { PivotSections } from "./pivot-sections";
 
 export const dynamic = "force-dynamic";
 
 function eur(cents: number): string {
   if (cents === 0) return "–";
   return (cents / 100).toLocaleString("de-DE", { maximumFractionDigits: 0 }) + " €";
-}
-
-// Jahresbudget-Zelle: farbige Prozentzahl (Anteil des Jahresbudgets, das im
-// laufenden Kalenderjahr bereits verbraucht/erreicht wurde).
-function BudgetPctCell({ row }: { row: CashflowCatRow }) {
-  if (row.budgetPct == null) {
-    return (
-      <td className="whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums text-slate-300">
-        –
-      </td>
-    );
-  }
-  const isIncome = row.kind === "INCOME";
-  const bg = budgetCellColor(row.yearActual, row.annualBudget, isIncome);
-  const pct = Math.round(row.budgetPct * 100);
-  return (
-    <td
-      className="whitespace-nowrap px-3 py-1.5 text-right text-sm font-semibold tabular-nums text-slate-800"
-      style={bg ? { backgroundColor: bg } : undefined}
-      title={`${formatCents(row.yearActual)} von ${formatCents(row.annualBudget)} (Jahresbudget)`}
-    >
-      {pct} %
-    </td>
-  );
-}
-
-function Cell({ value, month, tone }: { value: number; month: CashflowMonth; tone?: "in" | "out" }) {
-  const color = tone === "in" ? "text-emerald-700" : tone === "out" ? "text-red-600" : "text-slate-700";
-  return (
-    <td
-      className={`whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${color} ${month.isCurrent ? "bg-brand/5" : ""}`}
-    >
-      {value === 0 ? <span className="text-slate-300">–</span> : eur(value)}
-    </td>
-  );
-}
-
-function CatRow({ row, months }: { row: CashflowCatRow; months: CashflowMonth[] }) {
-  const isIncome = row.kind === "INCOME";
-  return (
-    <tr className="border-b border-slate-50">
-      <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-sm text-slate-700">
-        <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: row.color }} />
-        {row.name}
-      </td>
-      {row.values.map((v, i) => (
-        <Cell key={months[i].key} value={v} month={months[i]} tone={isIncome ? "in" : "out"} />
-      ))}
-      <BudgetPctCell row={row} />
-    </tr>
-  );
 }
 
 function SummaryRow({
@@ -249,36 +198,16 @@ export default async function DashboardPage({
             <SummaryRow label="· geplant" values={months.map((m) => -m.outflowPlanned)} months={months} muted />
             <SummaryRow label="Nettoveränderung" values={months.map((m) => m.net)} months={months} />
             <SummaryRow label="Liquidität Ende" values={months.map((m) => m.endLiquidity)} months={months} strong />
-
-            <tr className="bg-emerald-50/60">
-              <td className="sticky left-0 z-10 bg-emerald-50 px-3 py-1.5 text-xs font-semibold uppercase text-emerald-700" colSpan={months.length + 2}>
-                Einnahmen
-              </td>
-            </tr>
-            {matrix.incomeRows.length === 0 ? (
-              <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 2}>—</td></tr>
-            ) : (
-              matrix.incomeRows.map((r) => <CatRow key={r.categoryId ?? r.name} row={r} months={months} />)
-            )}
-
-            <tr className="bg-red-50/60">
-              <td className="sticky left-0 z-10 bg-red-50 px-3 py-1.5 text-xs font-semibold uppercase text-red-700" colSpan={months.length + 2}>
-                Ausgaben
-              </td>
-            </tr>
-            {matrix.expenseRows.length === 0 ? (
-              <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 2}>—</td></tr>
-            ) : (
-              matrix.expenseRows.map((r) => <CatRow key={r.categoryId ?? r.name} row={r} months={months} />)
-            )}
           </tbody>
+          <PivotSections months={months} incomeRows={matrix.incomeRows} expenseRows={matrix.expenseRows} />
         </table>
       </div>
 
       <p className="text-xs text-slate-400">
         Vergangene Monate zeigen gebuchte Umsätze, künftige Monate die Planposten und offenen
-        Posten. Die Liquiditäts-Endwerte sind auf den aktuellen Kontostand verankert. Budgets &amp;
-        Farbverläufe je Kategorie findest du unter <Link href="/breakdown" className="text-brand underline">Auswertung</Link>.
+        Posten. <strong>Tipp:</strong> Fahre mit der Maus über eine Zelle (oder tippe sie an), um die
+        transaktionsgenauen Ist-Buchungen und das Soll (Budget / Planposten / offene Posten) zu sehen.
+        Die Liquiditäts-Endwerte sind auf den aktuellen Kontostand verankert.
       </p>
     </div>
   );

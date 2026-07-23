@@ -9,23 +9,38 @@ automatisch kategorisieren, wiederkehrende Zahlungen planen und die
 > repliziert lediglich die *Funktion* (Liquiditätsplanung), nicht Code, Design
 > oder Marken eines Anbieters.
 
-## Funktionen (Phase 1 – MVP)
+## 📖 Ausführliche Doku: Seiten & Rechenlogik
 
-- 🏦 **Konten** mit Anfangssaldo und laufendem Saldo
-- 📥 **Import** von Kontoauszügen: **CSV** (Auto-Spaltenerkennung für Sparkasse,
-  VR-Bank, DKB, Commerzbank, ING …), **CAMT.053 (XML)** und **MT940 (.sta)**
-  – inkl. automatischer **Duplikaterkennung**
-- 🏷️ **Kategorien** und **Auto-Kategorisierungs-Regeln** (Teilstring oder Regex)
-- 🗓️ **Planung** wiederkehrender/einmaliger Ein- und Auszahlungen
-  (wöchentlich/monatlich/quartalsweise/jährlich, mit Intervall)
-- 📊 **Dashboard** mit Liquiditätskurve, Tiefpunkt-Erkennung und Warnung bei
-  drohender Unterdeckung
-- 🔐 **Single-User-Login** (Passwort + signiertes Session-Cookie), alle Routen
-  per Middleware geschützt
+**[docs/SEITEN-UND-LOGIK.md](./docs/SEITEN-UND-LOGIK.md)** erklärt für **jede Seite**,
+was sie zeigt, welche Funktionen sie hat und **wie sie rechnet** (Datenquellen &
+Formeln) – inkl. der Grundkonzepte (Vorzeichen/Cent, einbezogene Konten, neutrale
+Geldtransfers, Budget vs. Planposten vs. offener Posten, Prognose-Engine).
+
+## Funktionen (Überblick)
+
+Details je Seite in **[docs/SEITEN-UND-LOGIK.md](./docs/SEITEN-UND-LOGIK.md)**.
+
+- 🏦 **Konten** mit Anfangssaldo/laufendem Saldo; Konten aus der Berechnung ausschließbar
+- 📥 **Import** von Kontoauszügen (**CSV** mit Auto-Erkennung, **CAMT.053**, **MT940**)
+  inkl. **Duplikaterkennung**; zusätzlich **sevDesk-Sync** (Umsätze, Rechnungen/Belege)
+  und **Pipedrive-Sync** (Kontakte)
+- 🏷️ **Kategorien** + **Auto-Regeln** mit verschachtelten Bedingungen (UND/ODER/NICHT,
+  Text/Betrag/Konto/Datum, Regex)
+- 💰 **Budgets** (entkoppelt, mit Rhythmus & Zeitraum) und 🗓️ **Planposten**;
+  wechselseitig **umwandelbar** (kopieren/verschieben)
+- 📊 **Übersicht** mit ~22 ein-/ausblendbaren KPIs, Cashflow-Kurve (realisiert vs.
+  geplant), Budget-Status je Monat und Unterdeckungs-Warnung
+- 🔮 **Prognose:** tägliche Engine, 13-Wochen-Vorschau, Fälligkeitskalender, **Szenarien** + Vergleich
+- 🧾 **Offene Posten & Forderungen** (Aging, DSO, Mahnstufen)
+- 📈 **Auswertung**, **Plan/Ist**, **Planungs-Check**, **Steuer-/USt-Vorschau**,
+  **Klumpenrisiko (HHI)**, **Prognose-Güte**, **Bericht**
+- 🔔 **Benachrichtigungen** (Wochen-Digest + Alarme), **täglicher Auto-Sync**
+- 🔌 **MCP-Connector** (aggregat-only) mit **App-eigenem OAuth 2.1** für KI-Assistenten
+- 🔐 **Single-User-Login** (NextAuth), alle Routen per Middleware geschützt
 
 Geldbeträge werden intern durchgängig als **Ganzzahl in Cent** geführt (keine
 Float-Rundungsfehler). Die Kernlogik (Geld, Wiederholungen, Forecast, Import,
-Kategorisierung) ist mit Vitest getestet.
+Kategorisierung, Regel-Auswertung) ist mit Vitest getestet.
 
 ## Schnellstart mit Docker
 

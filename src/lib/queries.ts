@@ -24,6 +24,14 @@ export const getTotalBalanceCents = cache(async (): Promise<number> => {
 // (nur nicht-archivierte, nicht-ausgeschlossene Konten).
 export const INCLUDED_ACCOUNT = { archived: false, excludedFromCalc: false } as const;
 
+// IDs der neutralen Transfer-Kategorien (Geldtransfer). Umsätze dieser Kategorien
+// zählen NICHT als Ein-/Ausgabe (Konto-zu-Konto, netto null), bleiben aber im
+// Kontostand. Wird von Kennzahlen/Cashflow/Auswertung genutzt.
+export const getTransferCategoryIds = cache(async (): Promise<Set<string>> => {
+  const cats = await prisma.category.findMany({ where: { isTransfer: true }, select: { id: true } });
+  return new Set(cats.map((c) => c.id));
+});
+
 export interface AccountWithBalance {
   id: string;
   name: string;

@@ -123,6 +123,10 @@ model Category {
   openItems    OpenItem[]
   budgets      Budget[]
   scenarioAdjustments ScenarioCategoryAdjustment[]
+  // Neutral / durchlaufend: Konto-zu-Konto-Transfers (Geldtransfer). Solche
+  // Umsätze zählen NICHT als Einnahme/Ausgabe (über alle Konten netto null),
+  // bleiben aber im Kontostand. Steuern sind KEIN Transfer (echter Abfluss).
+  isTransfer   Boolean       @default(false)
   createdAt    DateTime      @default(now())
   // Soft-Delete: gesetzt = gelöscht (30 Tage wiederherstellbar, danach endgültig).
   deletedAt    DateTime?

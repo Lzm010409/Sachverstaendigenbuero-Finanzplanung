@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { deleteCategory, purgeCategory, restoreCategory } from "@/app/actions/categories";
+import { deleteCategory, purgeCategory, restoreCategory, toggleCategoryTransfer } from "@/app/actions/categories";
 import { ApplyRulesButton, CategoryForm, ResetCategoriesButton, RuleForm, type CatOption } from "./category-forms";
 import { RuleRow } from "./rule-row";
 import { ConfirmSubmit } from "@/components/confirm-submit";
@@ -14,6 +14,7 @@ type CatRow = {
   name: string;
   kind: "INCOME" | "EXPENSE";
   color: string;
+  isTransfer: boolean;
   _count: { transactions: number; budgets: number };
 };
 
@@ -42,6 +43,7 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
                   <td className="td font-medium">
                     <span className="mr-2 inline-block h-3 w-3 rounded-full align-middle" style={{ backgroundColor: c.color }} />
                     {c.name}
+                    {c.isTransfer && <span className="badge ml-2 bg-slate-100 text-slate-500">neutral · Transfer</span>}
                   </td>
                   <td className="td text-right text-slate-500">{c._count.transactions}</td>
                   <td className="td text-right text-slate-500">
@@ -52,12 +54,20 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
                     )}
                   </td>
                   <td className="td text-right">
-                    <form action={deleteCategory}>
-                      <input type="hidden" name="id" value={c.id} />
-                      <button className="text-xs text-slate-400 hover:text-red-600" title="in den Papierkorb">
-                        löschen
-                      </button>
-                    </form>
+                    <div className="flex items-center justify-end gap-3">
+                      <form action={toggleCategoryTransfer}>
+                        <input type="hidden" name="id" value={c.id} />
+                        <button className="text-xs text-slate-400 hover:text-brand" title="Als neutralen Geldtransfer markieren (zählt nicht als Ein-/Ausgabe)">
+                          {c.isTransfer ? "kein Transfer" : "als Transfer"}
+                        </button>
+                      </form>
+                      <form action={deleteCategory}>
+                        <input type="hidden" name="id" value={c.id} />
+                        <button className="text-xs text-slate-400 hover:text-red-600" title="in den Papierkorb">
+                          löschen
+                        </button>
+                      </form>
+                    </div>
                   </td>
                 </tr>
               ))}

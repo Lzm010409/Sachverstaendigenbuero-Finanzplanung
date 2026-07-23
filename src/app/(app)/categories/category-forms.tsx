@@ -36,6 +36,10 @@ export function CategoryForm() {
         <label className="label">Farbe</label>
         <input name="color" type="color" defaultValue="#007FFF" className="h-10 w-16 rounded border border-slate-300" />
       </div>
+      <label className="flex items-center gap-2 pb-2 text-sm text-slate-600" title="Konto-zu-Konto-Transfer – zählt nicht als Einnahme/Ausgabe">
+        <input type="checkbox" name="isTransfer" className="h-4 w-4 rounded border-slate-300" />
+        Geldtransfer (neutral)
+      </label>
       {state?.error && <p className="w-full text-sm text-red-600">{state.error}</p>}
       <button type="submit" className="btn-primary" disabled={pending}>
         {pending ? "…" : "Hinzufügen"}

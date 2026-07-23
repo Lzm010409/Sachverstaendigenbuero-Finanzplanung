@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { addDays, addMonths, isoDate, startOfDayUTC, todayUTC } from "./dates";
-import { getTotalBalanceCents, INCLUDED_ACCOUNT } from "./queries";
+import { getTotalBalanceCents, getTransferCategoryIds, INCLUDED_ACCOUNT } from "./queries";
 import { getBudgetAnnualByCategory, getForecastBudgetItems } from "./budgets";
 import { budgetAnnualCents, isBudgetActiveOn } from "./budget";
 
@@ -99,7 +99,7 @@ export async function getCategoryBreakdown(
   const yearStart = new Date(Date.UTC(ref.getUTCFullYear(), 0, 1));
   const yearEnd = new Date(Date.UTC(ref.getUTCFullYear() + 1, 0, 1));
 
-  const [categories, txs, yearTxs, budgetByCat] = await Promise.all([
+  const [categories, txs, yearTxs, budgetByCat, transferIds] = await Promise.all([
     prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
@@ -110,6 +110,7 @@ export async function getCategoryBreakdown(
       select: { categoryId: true, amount: true },
     }),
     getBudgetAnnualByCategory(ref),
+    getTransferCategoryIds(),
   ]);
 
   const divisor = granularity === "month" ? 12 : granularity === "week" ? 52 : 1;
@@ -122,6 +123,7 @@ export async function getCategoryBreakdown(
     return periodSums.get(k)!;
   };
   for (const t of txs) {
+    if (t.categoryId && transferIds.has(t.categoryId)) continue; // Geldtransfer neutral
     const idx = periods.findIndex(
       (p) => t.bookingDate.getTime() >= p.start.getTime() && t.bookingDate.getTime() < p.end.getTime(),
     );
@@ -130,6 +132,7 @@ export async function getCategoryBreakdown(
   }
   const yearSums = new Map<string, number>();
   for (const t of yearTxs) {
+    if (t.categoryId && transferIds.has(t.categoryId)) continue;
     yearSums.set(key(t.categoryId), (yearSums.get(key(t.categoryId)) ?? 0) + t.amount);
   }
 
@@ -251,7 +254,7 @@ export async function getCashflowMatrix(
   // Ist-Summen des laufenden Kalenderjahres je Kategorie (für die Jahresbudget-
   // Erreichung), unabhängig vom angezeigten Fenster.
   const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
-  const [categories, txs, planned, openItems, balance, yearAgg, budgetByCat, budgetForecast] = await Promise.all([
+  const [categories, txs, planned, openItems, balance, yearAgg, budgetByCat, budgetForecast, transferIds] = await Promise.all([
     prisma.category.findMany({ where: { deletedAt: null } }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: rangeStart, lt: rangeEnd }, account: INCLUDED_ACCOUNT },
@@ -267,6 +270,7 @@ export async function getCashflowMatrix(
     }),
     getBudgetAnnualByCategory(today),
     getForecastBudgetItems(today),
+    getTransferCategoryIds(),
   ]);
   const yearByCat = new Map(yearAgg.map((a) => [a.categoryId!, a._sum.amount ?? 0]));
 
@@ -282,6 +286,7 @@ export async function getCashflowMatrix(
   }
   const futureEvents: Ev[] = [];
   for (const p of planned) {
+    if (p.categoryId && transferIds.has(p.categoryId)) continue; // Transfers neutral
     for (const date of occurrencesBetween(p, tomorrow, addDays(rangeEnd, -1))) {
       futureEvents.push({ date, amount: p.amount, categoryId: p.categoryId });
     }
@@ -294,6 +299,7 @@ export async function getCashflowMatrix(
     }
   }
   for (const oi of openItems) {
+    if (oi.categoryId && transferIds.has(oi.categoryId)) continue; // Transfers neutral
     // Nur den noch offenen Rest als "geplant" ansetzen (bezahlter Teil steckt
     // bereits als gebuchter Umsatz in `txs` = realisiert). Verhindert Doppel-
     // zählung bei Teilzahlungen.
@@ -332,7 +338,10 @@ export async function getCashflowMatrix(
       else outflowPlanned[mi] += -amount;
     }
   };
-  for (const t of txs) addValue(monthIndex(t.bookingDate), t.categoryId, t.amount, true);
+  for (const t of txs) {
+    if (t.categoryId && transferIds.has(t.categoryId)) continue; // Geldtransfer neutral
+    addValue(monthIndex(t.bookingDate), t.categoryId, t.amount, true);
+  }
   for (const e of futureEvents) addValue(monthIndex(e.date), e.categoryId, e.amount, false);
 
   // Liquiditäts-Walk, verankert am aktuellen Kontostand – gültig für jedes
@@ -434,21 +443,24 @@ export async function getKpis(): Promise<Kpis> {
   const today = todayUTC();
   const from = addMonths(today, -3);
 
-  const [balance, txs, openItems] = await Promise.all([
+  const [balance, txs, openItems, transferIds] = await Promise.all([
     getTotalBalanceCents(),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: from, lt: today }, account: INCLUDED_ACCOUNT },
-      select: { amount: true },
+      select: { amount: true, categoryId: true },
     }),
     prisma.openItem.findMany({
       where: { paid: false },
       select: { kind: true, amount: true, paidAmount: true },
     }),
+    getTransferCategoryIds(),
   ]);
 
   let income = 0;
   let expense = 0;
   for (const t of txs) {
+    // Geldtransfers (Konto-zu-Konto) sind neutral – nicht als Ein-/Ausgabe zählen.
+    if (t.categoryId && transferIds.has(t.categoryId)) continue;
     if (t.amount >= 0) income += t.amount;
     else expense += -t.amount;
   }

@@ -13,6 +13,7 @@ const catSchema = z.object({
   name: z.string().min(1, "Name erforderlich"),
   kind: z.enum(["INCOME", "EXPENSE"]),
   color: z.string().optional(),
+  isTransfer: z.string().optional(),
 });
 
 export async function createCategory(formData: FormData): Promise<FormState> {
@@ -23,10 +24,23 @@ export async function createCategory(formData: FormData): Promise<FormState> {
       name: parsed.data.name,
       kind: parsed.data.kind,
       color: parsed.data.color || "#64748b",
+      isTransfer: parsed.data.isTransfer === "on",
     },
   });
   revalidatePath("/categories");
   return { ok: true };
+}
+
+/** Markiert eine Kategorie als neutralen Geldtransfer (oder wieder zurück). */
+export async function toggleCategoryTransfer(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  const c = await prisma.category.findUnique({ where: { id }, select: { isTransfer: true } });
+  if (!c) return;
+  await prisma.category.update({ where: { id }, data: { isTransfer: !c.isTransfer } });
+  revalidatePath("/categories");
+  revalidatePath("/breakdown");
+  revalidatePath("/");
 }
 
 /** Soft-Delete: Kategorie 30 Tage wiederherstellbar in den Papierkorb legen. */

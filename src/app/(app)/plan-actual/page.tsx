@@ -90,10 +90,11 @@ export default async function PlanActualPage({
         )}
       </div>
       <p className="text-xs text-slate-400">
-        Hinweis: „Ist" basiert auf den gebuchten Umsätzen des Monats. „Plan" umfasst die
-        <strong> Budgets</strong> (Monatsbetrag = Jahreswert/12, sofern in diesem Monat gültig)
-        <strong> und</strong> die aktiven <strong>Planposten</strong> mit Kategorie. Das Vorzeichen
-        folgt dem Betrag (Ausgaben negativ).
+        Hinweis: „Ist" basiert auf den gebuchten Umsätzen des Monats. „Plan" nimmt je Kategorie
+        <strong> das Budget</strong> als Soll (Monatsbetrag = Jahreswert/12, sofern in diesem Monat
+        gültig); nur wo <strong>kein Budget</strong> hinterlegt ist, greift der aktive
+        <strong> Planposten</strong> der Kategorie. So zählt je Kategorie genau eine Plan-Quelle
+        (keine Doppelung). Das Vorzeichen folgt dem Betrag (Ausgaben negativ).
       </p>
     </div>
   );

@@ -180,24 +180,33 @@ export async function getPlanVsActual(monthOffset = 0): Promise<{
   const lastOfMonth = addMonths(monthStart, 1);
   lastOfMonth.setUTCDate(0); // letzter Tag des Monats
 
-  const plannedByCat = new Map<string, number>();
-  // 1) Wiederkehrende Planposten (Planposten mit Kategorie), im Monat fällig.
+  // Plan je Kategorie = Budget hat VORRANG (das „Soll"); nur wo KEIN Budget
+  // existiert, greift der Planposten. So gibt es je Kategorie genau eine
+  // Plan-Quelle – keine Doppelzählung, trotzdem vollständig.
+
+  // Planposten mit Kategorie (im Monat fällig).
+  const plannedItemByCat = new Map<string, number>();
   for (const p of planned) {
     const occ = occurrencesBetween(p, monthStart, lastOfMonth);
     if (occ.length === 0) continue;
     const key = p.categoryId ?? "__none__";
-    plannedByCat.set(key, (plannedByCat.get(key) ?? 0) + p.amount * occ.length);
+    plannedItemByCat.set(key, (plannedItemByCat.get(key) ?? 0) + p.amount * occ.length);
   }
-  // 2) Budgets (Monatsbetrag = Jahreswert/12, wie auf der Übersicht),
-  //    sofern der Gültigkeitszeitraum diesen Monat überschneidet. Vorzeichen aus
-  //    der Art (Ausgabe negativ), damit es mit Planposten/Umsätzen vergleichbar ist.
+  // Budgets (Monatsbetrag = Jahreswert/12, wie auf der Übersicht), sofern der
+  // Gültigkeitszeitraum diesen Monat überschneidet. Vorzeichen aus der Art.
+  const budgetByCat = new Map<string, number>();
   for (const b of budgets) {
     const startsBeforeEnd = !b.startDate || new Date(b.startDate).getTime() < monthEnd.getTime();
     const endsAfterStart = !b.endDate || new Date(b.endDate).getTime() >= monthStart.getTime();
     if (!startsBeforeEnd || !endsAfterStart) continue;
     const monthly = Math.round(budgetAnnualCents(b.amount, b.period as BudgetPeriod) / 12);
     const signed = b.kind === "EXPENSE" ? -Math.abs(monthly) : Math.abs(monthly);
-    plannedByCat.set(b.categoryId!, (plannedByCat.get(b.categoryId!) ?? 0) + signed);
+    budgetByCat.set(b.categoryId!, (budgetByCat.get(b.categoryId!) ?? 0) + signed);
+  }
+  // Zusammenführen: Budget gewinnt, sonst Planposten.
+  const plannedByCat = new Map<string, number>();
+  for (const key of new Set([...budgetByCat.keys(), ...plannedItemByCat.keys()])) {
+    plannedByCat.set(key, budgetByCat.has(key) ? budgetByCat.get(key)! : plannedItemByCat.get(key)!);
   }
 
   const actualByCat = new Map<string, number>();

@@ -312,8 +312,12 @@ Planposten, **keine** Prognose. Sie beantwortet „Halte ich meine Budgets ein?"
 
 **Rechenlogik (`getPlanVsActual`)**
 - **Ist** = gebuchte Umsätze des Monats (einbezogene Konten).
-- **Plan** = **Budgets** (Monatsbetrag = Jahreswert/12, sofern der Zeitraum den Monat
-  überschneidet) **plus** aktive **Planposten** mit Kategorie (im Monat fällig).
+- **Plan** je Kategorie mit **Vorrang für das Budget**: existiert ein Budget
+  (Monatsbetrag = Jahreswert/12, sofern der Zeitraum den Monat überschneidet), zählt
+  **nur** dieses als Soll; **ohne** Budget greift der aktive **Planposten** der
+  Kategorie. So gibt es je Kategorie **genau eine** Plan-Quelle (keine Doppelzählung).
+  Der Prognose-Schalter „in Prognose einbeziehen" spielt hier **keine** Rolle – Plan/Ist
+  ist ein Soll-Ist-Vergleich, kein Cashflow-Forecast.
 - **Abweichung** = Ist − Plan (Vorzeichen folgt dem Betrag).
 
 ---

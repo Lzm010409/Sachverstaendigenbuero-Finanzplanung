@@ -78,7 +78,7 @@ async function TransactionDrill({
   const [rows, count, agg] = await Promise.all([
     prisma.transaction.findMany({
       where,
-      orderBy: { bookingDate: "desc" },
+      orderBy: [{ bookingDate: "desc" }, { id: "desc" }],
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       include: { account: true, category: true },

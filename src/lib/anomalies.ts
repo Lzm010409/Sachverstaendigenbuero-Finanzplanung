@@ -324,11 +324,11 @@ export async function getAnomalyDetail(key: string): Promise<AnomalyDetail> {
     }));
 
   if (base === "tx.uncategorized") {
-    const ts = await prisma.transaction.findMany({ where: { account: INCLUDED_ACCOUNT, categoryId: null }, orderBy: { bookingDate: "desc" }, take: LIMIT, include: { account: true } });
+    const ts = await prisma.transaction.findMany({ where: { account: INCLUDED_ACCOUNT, categoryId: null }, orderBy: [{ bookingDate: "desc" }, { id: "desc" }], take: LIMIT, include: { account: true } });
     return { title: "Nicht kategorisierte Umsätze", rows: txRows(ts), pageHref: "/transactions?state=uncategorized", pageLabel: "In Umsätzen filtern" };
   }
   if (base === "tx.zero") {
-    const ts = await prisma.transaction.findMany({ where: { account: INCLUDED_ACCOUNT, amount: 0 }, orderBy: { bookingDate: "desc" }, take: LIMIT, include: { account: true } });
+    const ts = await prisma.transaction.findMany({ where: { account: INCLUDED_ACCOUNT, amount: 0 }, orderBy: [{ bookingDate: "desc" }, { id: "desc" }], take: LIMIT, include: { account: true } });
     return { title: "Umsätze mit Betrag 0", rows: txRows(ts) };
   }
   if (base === "tx.future") {

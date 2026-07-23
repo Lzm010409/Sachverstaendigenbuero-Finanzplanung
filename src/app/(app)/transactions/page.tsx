@@ -32,7 +32,9 @@ export default async function TransactionsPage({
   const [transactions, totalCount, accounts, categories] = await Promise.all([
     prisma.transaction.findMany({
       where,
-      orderBy: { bookingDate: "desc" },
+      // Stabiler Zweitschlüssel (id), damit Umsätze desselben Tages ihre
+      // Reihenfolge über Neuladen/Kategorisieren behalten und nicht springen.
+      orderBy: [{ bookingDate: "desc" }, { id: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: { account: true, category: true },

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { getPlanVsActual } from "@/lib/queries";
 import { formatCents } from "@/lib/money";
+import { CellHover } from "@/components/cell-hover";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,8 @@ export default async function PlanActualPage({
   const { monthStart, rows } = await getPlanVsActual(monthOffset);
 
   const monthLabel = monthStart.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+  const fromISO = monthStart.toISOString().slice(0, 10);
+  const toISO = new Date(Date.UTC(monthStart.getUTCFullYear(), monthStart.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
   const totalPlanned = rows.reduce((s, r) => s + r.planned, 0);
   const totalActual = rows.reduce((s, r) => s + r.actual, 0);
 
@@ -57,11 +60,13 @@ export default async function PlanActualPage({
               <tbody>
                 {rows.map((r) => {
                   const diff = r.actual - r.planned;
+                  const q = { cat: r.categoryId ?? "none", from: fromISO, to: toISO };
+                  const title = `${r.categoryName} · ${monthLabel}`;
                   return (
                     <tr key={r.categoryId ?? "none"} className="border-b border-slate-50">
                       <td className="td font-medium">{r.categoryName}</td>
-                      <td className="td text-right">{formatCents(r.planned)}</td>
-                      <td className="td text-right">{formatCents(r.actual)}</td>
+                      <CellHover query={q} title={title} className="td text-right">{formatCents(r.planned)}</CellHover>
+                      <CellHover query={q} title={title} className="td text-right">{formatCents(r.actual)}</CellHover>
                       <td
                         className={`td text-right font-semibold ${diff < 0 ? "text-red-600" : "text-emerald-600"}`}
                       >

@@ -3,6 +3,7 @@ import { getWeeklyForecast, getPlanningSettings } from "@/lib/planning";
 import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { CashflowChart } from "@/components/cashflow-chart";
+import { CellHover } from "@/components/cell-hover";
 
 export const dynamic = "force-dynamic";
 
@@ -109,13 +110,23 @@ export default async function ForecastPage({
               <tr key={b.index} className={`border-b border-slate-50 ${b.belowThreshold ? "bg-amber-50" : ""}`}>
                 <td className="px-3 py-1.5 font-medium text-slate-700">{b.label}</td>
                 <td className="px-3 py-1.5 text-right tabular-nums text-slate-500">{formatCents(b.startLiquidity)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-emerald-700">
+                <CellHover
+                  query={{ cat: "all", dir: "in", from: b.startISO, to: b.endISO }}
+                  title={`Einzahlungen · ${b.label}`}
+                  className="px-3 py-1.5 text-right tabular-nums text-emerald-700"
+                >
                   {b.inflow ? formatCents(b.inflow) : "–"}
                   {b.index === 0 && b.inflowRealized > 0 && (
                     <div className="text-xs font-normal text-slate-400">davon realisiert {formatCents(b.inflowRealized)}</div>
                   )}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-red-600">{b.outflow ? formatCents(-b.outflow) : "–"}</td>
+                </CellHover>
+                <CellHover
+                  query={{ cat: "all", dir: "out", from: b.startISO, to: b.endISO }}
+                  title={`Auszahlungen · ${b.label}`}
+                  className="px-3 py-1.5 text-right tabular-nums text-red-600"
+                >
+                  {b.outflow ? formatCents(-b.outflow) : "–"}
+                </CellHover>
                 <td className={`px-3 py-1.5 text-right tabular-nums ${b.net < 0 ? "text-red-600" : "text-slate-700"}`}>{formatCents(b.net)}</td>
                 <td className={`px-3 py-1.5 text-right font-semibold tabular-nums ${b.endLiquidity < 0 ? "text-red-600" : b.belowThreshold ? "text-amber-700" : "text-slate-900"}`}>
                   {formatCents(b.endLiquidity)}

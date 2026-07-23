@@ -5,6 +5,7 @@ import { budgetCellColor } from "@/lib/budget-color";
 import { GranularityToggle } from "@/components/granularity-toggle";
 import { PageAlerts } from "@/components/page-alerts";
 import { BreakdownRowInfo } from "./row-info";
+import { CellHover } from "@/components/cell-hover";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ function Section({
 }: {
   title: string;
   rows: BreakdownRow[];
-  periods: { key: string; label: string }[];
+  periods: { key: string; label: string; start: Date; end: Date }[];
   divisor: number;
 }) {
   if (rows.length === 0) return null;
@@ -52,14 +53,18 @@ function Section({
             </td>
             {r.values.map((v, i) => {
               const bg = budgetCellColor(Math.abs(v), periodBudget, isIncome);
+              const from = periods[i].start.toISOString().slice(0, 10);
+              const to = new Date(periods[i].end.getTime() - 86_400_000).toISOString().slice(0, 10);
               return (
-                <td
+                <CellHover
                   key={periods[i].key}
+                  query={{ cat: r.categoryId ?? "none", from, to }}
+                  title={`${r.name} · ${periods[i].label}`}
                   className="td whitespace-nowrap text-right tabular-nums"
                   style={bg ? { backgroundColor: bg } : undefined}
                 >
                   {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
-                </td>
+                </CellHover>
               );
             })}
             <td className="td whitespace-nowrap text-right text-slate-500">

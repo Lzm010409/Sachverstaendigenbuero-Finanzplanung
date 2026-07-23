@@ -7,13 +7,14 @@ import { PageAlerts } from "@/components/page-alerts";
 import { TransactionsTable, type TxRow } from "./transactions-table";
 import type { CatOpt } from "@/components/category-select";
 import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
+import { CategoryOptions } from "@/components/category-select";
 
 export const dynamic = "force-dynamic";
 
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string; state?: string; page?: string; q?: string; size?: string }>;
+  searchParams: Promise<{ account?: string; state?: string; page?: string; q?: string; size?: string; cat?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
@@ -22,7 +23,9 @@ export default async function TransactionsPage({
   // nicht in die Berechnungen). Endgültig entfernen: Konten-Seite.
   const where: Prisma.TransactionWhereInput = { account: { archived: false } };
   if (sp.account) where.accountId = sp.account;
-  if (sp.state === "uncategorized") where.categoryId = null;
+  // Kategorie-Filter: "none" = nicht zugeordnet, sonst konkrete Kategorie-ID.
+  if (sp.cat === "none" || sp.state === "uncategorized") where.categoryId = null;
+  else if (sp.cat) where.categoryId = sp.cat;
   if (sp.q) {
     where.OR = [
       { counterparty: { contains: sp.q, mode: "insensitive" } },
@@ -58,7 +61,7 @@ export default async function TransactionsPage({
     negative: t.amount < 0,
   }));
 
-  const hasFilter = !!(sp.account || sp.state || sp.q);
+  const hasFilter = !!(sp.account || sp.state || sp.q || sp.cat);
 
   return (
     <div className="space-y-6">
@@ -83,10 +86,11 @@ export default async function TransactionsPage({
           </select>
         </div>
         <div>
-          <label className="label">Status</label>
-          <select name="state" defaultValue={sp.state ?? ""} className="input w-auto">
+          <label className="label">Kategorie</label>
+          <select name="cat" defaultValue={sp.cat ?? ""} className="input w-auto">
             <option value="">alle</option>
-            <option value="uncategorized">nicht zugeordnet</option>
+            <option value="none">nicht zugeordnet</option>
+            <CategoryOptions categories={catOptions} />
           </select>
         </div>
         <div className="min-w-[180px] flex-1">
@@ -110,7 +114,11 @@ export default async function TransactionsPage({
             .
           </p>
         ) : (
-          <TransactionsTable transactions={rows} categories={catOptions} />
+          <TransactionsTable
+            transactions={rows}
+            categories={catOptions}
+            filterCategoryId={sp.cat === "none" || sp.state === "uncategorized" ? "none" : sp.cat || undefined}
+          />
         )}
 
         <Pagination
@@ -119,7 +127,7 @@ export default async function TransactionsPage({
           totalItems={totalCount}
           pageSize={pageSize}
           basePath="/transactions"
-          params={{ account: sp.account, state: sp.state, q: sp.q, size: pageSize !== 50 ? String(pageSize) : undefined }}
+          params={{ account: sp.account, state: sp.state, q: sp.q, cat: sp.cat, size: pageSize !== 50 ? String(pageSize) : undefined }}
         />
       </div>
     </div>

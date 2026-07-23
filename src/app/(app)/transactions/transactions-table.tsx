@@ -31,7 +31,18 @@ export interface TxRow {
   negative: boolean;
 }
 
-export function TransactionsTable({ transactions, categories }: { transactions: TxRow[]; categories: CatOpt[] }) {
+export function TransactionsTable({
+  transactions,
+  categories,
+  filterCategoryId,
+}: {
+  transactions: TxRow[];
+  categories: CatOpt[];
+  // Aktiver Kategorie-Filter: "none" = nicht zugeordnet, sonst Kategorie-ID;
+  // undefined = kein Filter. Passt eine Zeile nach dem Kategorisieren nicht mehr,
+  // wird sie lokal ausgeblendet (wie früher der Refresh, aber ohne Neuladen).
+  filterCategoryId?: string;
+}) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState<string>("");
@@ -40,6 +51,7 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
   // (kein Refresh-Sturm -> keine 503-Fehler, kein Umsortieren).
   const [override, setOverride] = useState<Map<string, string | null>>(new Map());
   const [deleted, setDeleted] = useState<Set<string>>(new Set());
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
 
   // Bei echtem Datensatz-Wechsel (Navigation/Filter/Seite) lokale Zustände
   // zurücksetzen. Signatur = Zeilen-IDs; ändert sich nicht bei rein lokalen Edits.
@@ -48,9 +60,16 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
     setOverride(new Map());
     setDeleted(new Set());
     setSelected(new Set());
+    setHidden(new Set());
   }, [sig]);
 
-  const rows = transactions.filter((t) => !deleted.has(t.id));
+  const matchesFilter = (catId: string | null) => {
+    if (!filterCategoryId) return true;
+    if (filterCategoryId === "none") return catId == null;
+    return catId === filterCategoryId;
+  };
+
+  const rows = transactions.filter((t) => !deleted.has(t.id) && !hidden.has(t.id));
   const catOf = (t: TxRow) => (override.has(t.id) ? override.get(t.id)! : t.categoryId);
 
   const allOnPage = rows.length > 0 && rows.every((t) => selected.has(t.id));
@@ -88,6 +107,14 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
       for (const id of ids) next.set(id, cat);
       return next;
     });
+    // Zeilen, die nicht mehr zum aktiven Filter passen, ausblenden.
+    if (!matchesFilter(cat)) {
+      setHidden((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.add(id);
+        return next;
+      });
+    }
     setSelected(new Set());
     void persist({ op: "categorize", ids, categoryId: cat }).then((ok) => {
       if (!ok) onError();
@@ -97,6 +124,7 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
   const setOne = (id: string, categoryId: string) => {
     const val = categoryId || null;
     setOverride((prev) => new Map(prev).set(id, val));
+    if (!matchesFilter(val)) setHidden((prev) => new Set(prev).add(id));
     void persist({ op: "categorize", ids: [id], categoryId: val }).then((ok) => {
       if (!ok) onError();
     });

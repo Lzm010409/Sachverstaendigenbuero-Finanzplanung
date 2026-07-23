@@ -42,18 +42,23 @@ async function main() {
   console.log(`\n  Zuflüsse gesamt (nur einbezogene Konten): ${eur(inflowIncl)} €  (${included.filter((t) => t.amount > 0).length} Umsätze)`);
   console.log(`  Zuflüsse gesamt (ALLE Konten):            ${eur(inflowAll)} €`);
 
-  // je Kategorie (einbezogene Konten, positive)
-  console.log("\n-- Zuflüsse je Kategorie (einbezogene Konten) --");
-  const perCat = new Map<string, { v: number; n: number }>();
+  // je Kategorie (einbezogene Konten) – getrennt Zu-/Abfluss.
+  const perCatIn = new Map<string, { v: number; n: number }>();
+  const perCatOut = new Map<string, { v: number; n: number }>();
   for (const t of included) {
-    if (t.amount <= 0) continue;
     const key = t.category?.name ?? "(ohne Kategorie)";
-    const c = perCat.get(key) ?? { v: 0, n: 0 };
-    c.v += t.amount;
+    const m = t.amount > 0 ? perCatIn : perCatOut;
+    const c = m.get(key) ?? { v: 0, n: 0 };
+    c.v += Math.abs(t.amount);
     c.n++;
-    perCat.set(key, c);
+    m.set(key, c);
   }
-  for (const [name, c] of [...perCat.entries()].sort((a, b) => b[1].v - a[1].v)) {
+  console.log("\n-- Zuflüsse je Kategorie (einbezogene Konten) --");
+  for (const [name, c] of [...perCatIn.entries()].sort((a, b) => b[1].v - a[1].v)) {
+    console.log(`  ${eur(c.v).padStart(12)} €  (${c.n})  ${name}`);
+  }
+  console.log("-- Abflüsse je Kategorie (einbezogene Konten) --");
+  for (const [name, c] of [...perCatOut.entries()].sort((a, b) => b[1].v - a[1].v)) {
     console.log(`  ${eur(c.v).padStart(12)} €  (${c.n})  ${name}`);
   }
   console.log("=== Ende ===\n");

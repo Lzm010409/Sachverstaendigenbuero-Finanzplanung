@@ -1,9 +1,24 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { bulkSetTransactionCategory, deleteTransaction, setTransactionCategory } from "@/app/actions/transactions";
 import { CategoryOptions, type CatOpt } from "@/components/category-select";
+
+// Persistiert über die API-Route (fetch), damit KEINE Server-Action-Revalidierung
+// die schwere Umsätze-Route bei jedem Klick neu rendert (verhindert 503 bei
+// schnellem Kategorisieren).
+async function persist(payload: Record<string, unknown>): Promise<boolean> {
+  try {
+    const res = await fetch("/api/transactions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
 
 export interface TxRow {
   id: string;
@@ -20,10 +35,29 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCat, setBulkCat] = useState<string>("");
-  const [pending, start] = useTransition();
+  // Optimistische lokale Zustände: Kategorie-Overrides und gelöschte Zeilen.
+  // So bleibt die Zuordnung sofort sichtbar OHNE die ganze Seite neu zu laden
+  // (kein Refresh-Sturm -> keine 503-Fehler, kein Umsortieren).
+  const [override, setOverride] = useState<Map<string, string | null>>(new Map());
+  const [deleted, setDeleted] = useState<Set<string>>(new Set());
 
-  const allOnPage = transactions.length > 0 && transactions.every((t) => selected.has(t.id));
-  const someOnPage = transactions.some((t) => selected.has(t.id));
+  // Bei echtem Datensatz-Wechsel (Navigation/Filter/Seite) lokale Zustände
+  // zurücksetzen. Signatur = Zeilen-IDs; ändert sich nicht bei rein lokalen Edits.
+  const sig = useMemo(() => transactions.map((t) => t.id).join(","), [transactions]);
+  useEffect(() => {
+    setOverride(new Map());
+    setDeleted(new Set());
+    setSelected(new Set());
+  }, [sig]);
+
+  const rows = transactions.filter((t) => !deleted.has(t.id));
+  const catOf = (t: TxRow) => (override.has(t.id) ? override.get(t.id)! : t.categoryId);
+
+  const allOnPage = rows.length > 0 && rows.every((t) => selected.has(t.id));
+  const someOnPage = rows.some((t) => selected.has(t.id));
+
+  // Fehler beim Schreiben -> einmalig neu synchronisieren (statt still zu divergieren).
+  const onError = () => router.refresh();
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -35,48 +69,50 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
 
   const toggleAll = () =>
     setSelected((prev) => {
-      if (transactions.every((t) => prev.has(t.id))) {
+      if (rows.every((t) => prev.has(t.id))) {
         const next = new Set(prev);
-        for (const t of transactions) next.delete(t.id);
+        for (const t of rows) next.delete(t.id);
         return next;
       }
       const next = new Set(prev);
-      for (const t of transactions) next.add(t.id);
+      for (const t of rows) next.add(t.id);
       return next;
     });
 
   const applyBulk = () => {
-    const ids = [...selected];
+    const ids = [...selected].filter((id) => !deleted.has(id));
     if (ids.length === 0) return;
-    start(async () => {
-      await bulkSetTransactionCategory(ids, bulkCat || null);
-      setSelected(new Set());
-      router.refresh();
+    const cat = bulkCat || null;
+    setOverride((prev) => {
+      const next = new Map(prev);
+      for (const id of ids) next.set(id, cat);
+      return next;
+    });
+    setSelected(new Set());
+    void persist({ op: "categorize", ids, categoryId: cat }).then((ok) => {
+      if (!ok) onError();
     });
   };
 
-  const setOne = (id: string, categoryId: string) =>
-    start(async () => {
-      const fd = new FormData();
-      fd.set("id", id);
-      fd.set("categoryId", categoryId);
-      await setTransactionCategory(fd);
-      router.refresh();
+  const setOne = (id: string, categoryId: string) => {
+    const val = categoryId || null;
+    setOverride((prev) => new Map(prev).set(id, val));
+    void persist({ op: "categorize", ids: [id], categoryId: val }).then((ok) => {
+      if (!ok) onError();
     });
+  };
 
-  const remove = (id: string) =>
-    start(async () => {
-      const fd = new FormData();
-      fd.set("id", id);
-      await deleteTransaction(fd);
-      router.refresh();
+  const remove = (id: string) => {
+    setDeleted((prev) => new Set(prev).add(id));
+    void persist({ op: "delete", id }).then((ok) => {
+      if (!ok) onError();
     });
+  };
 
-  const selectedCount = useMemo(() => selected.size, [selected]);
+  const selectedCount = selected.size;
 
   return (
     <div>
-      {/* Sammel-Aktionsleiste – erscheint, sobald etwas ausgewählt ist. */}
       {selectedCount > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-3 rounded-md border border-brand/30 bg-brand/5 px-3 py-2">
           <span className="text-sm font-medium text-slate-700">{selectedCount} ausgewählt</span>
@@ -89,8 +125,8 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
             <option value="">– nicht zugeordnet –</option>
             <CategoryOptions categories={categories} />
           </select>
-          <button className="btn-primary px-3 py-1 text-sm" disabled={pending} onClick={applyBulk}>
-            {pending ? "…" : "Kategorie zuweisen"}
+          <button className="btn-primary px-3 py-1 text-sm" onClick={applyBulk}>
+            Kategorie zuweisen
           </button>
           <button className="btn-secondary px-3 py-1 text-sm" onClick={() => setSelected(new Set())}>
             Auswahl aufheben
@@ -123,7 +159,7 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
             </tr>
           </thead>
           <tbody>
-            {transactions.map((t) => (
+            {rows.map((t) => (
               <tr key={t.id} className={`border-b border-slate-50 align-top ${selected.has(t.id) ? "bg-brand/5" : ""}`}>
                 <td className="td">
                   <input
@@ -142,8 +178,7 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
                 <td className="td whitespace-nowrap text-xs text-slate-500">{t.accountName}</td>
                 <td className="td">
                   <select
-                    value={t.categoryId ?? ""}
-                    disabled={pending}
+                    value={catOf(t) ?? ""}
                     className="input py-1 text-xs"
                     onChange={(e) => setOne(t.id, e.target.value)}
                   >
@@ -157,7 +192,6 @@ export function TransactionsTable({ transactions, categories }: { transactions: 
                 <td className="td text-right">
                   <button
                     className="text-xs text-slate-300 hover:text-red-600"
-                    disabled={pending}
                     onClick={() => remove(t.id)}
                     aria-label="Umsatz löschen"
                   >

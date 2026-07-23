@@ -1,5 +1,6 @@
 import { getPaymentCalendar } from "@/lib/calendar";
 import { formatCents } from "@/lib/money";
+import { FilterMemory, AutoFilterForm } from "@/components/filter-memory";
 
 export const dynamic = "force-dynamic";
 
@@ -17,20 +18,20 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-6">
+      <FilterMemory pageKey="/calendar" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Fälligkeitskalender</h1>
           <p className="text-sm text-slate-500">Ein- und ausgehende Zahlungen nach Datum (nächste {days} Tage)</p>
         </div>
-        <form method="get">
-          <select name="d" defaultValue={String(days)} className="input w-auto py-1 text-sm" >
+        <AutoFilterForm pageKey="/calendar">
+          <select name="d" defaultValue={String(days)} className="input w-auto py-1 text-sm">
             <option value="28">4 Wochen</option>
             <option value="56">8 Wochen</option>
             <option value="90">3 Monate</option>
             <option value="120">4 Monate</option>
           </select>
-          <button className="btn-secondary ml-2 px-3 py-1 text-sm">Anzeigen</button>
-        </form>
+        </AutoFilterForm>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">

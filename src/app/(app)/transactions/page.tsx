@@ -6,6 +6,7 @@ import { Pagination, clampPageSize } from "@/components/pagination";
 import { PageAlerts } from "@/components/page-alerts";
 import { TransactionsTable, type TxRow } from "./transactions-table";
 import type { CatOpt } from "@/components/category-select";
+import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
 
 export const dynamic = "force-dynamic";
 
@@ -57,8 +58,11 @@ export default async function TransactionsPage({
     negative: t.amount < 0,
   }));
 
+  const hasFilter = !!(sp.account || sp.state || sp.q);
+
   return (
     <div className="space-y-6">
+      <FilterMemory pageKey="/transactions" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Umsätze</h1>
         <span className="text-sm text-slate-500">{totalCount} Buchungen</span>
@@ -66,7 +70,7 @@ export default async function TransactionsPage({
 
       <PageAlerts page="/transactions" />
 
-      <form className="card flex flex-wrap items-end gap-3" method="get">
+      <AutoFilterForm pageKey="/transactions" className="card flex flex-wrap items-end gap-3">
         <div>
           <label className="label">Konto</label>
           <select name="account" defaultValue={sp.account ?? ""} className="input w-auto">
@@ -89,10 +93,12 @@ export default async function TransactionsPage({
           <label className="label">Suche</label>
           <input name="q" defaultValue={sp.q ?? ""} className="input" placeholder="Zweck / Gegenpartei" />
         </div>
-        <button className="btn-secondary" type="submit">
-          Filtern
-        </button>
-      </form>
+        {hasFilter && (
+          <ClearFiltersLink pageKey="/transactions" basePath="/transactions" className="px-2 py-2 text-sm text-slate-400 hover:text-slate-600">
+            zurücksetzen
+          </ClearFiltersLink>
+        )}
+      </AutoFilterForm>
 
       <div className="card">
         {transactions.length === 0 ? (

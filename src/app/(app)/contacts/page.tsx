@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { Pagination, clampPageSize } from "@/components/pagination";
+import { FilterMemory, AutoFilterForm } from "@/components/filter-memory";
 
 export const dynamic = "force-dynamic";
 
@@ -36,20 +37,18 @@ export default async function ContactsPage({
 
   return (
     <div className="space-y-6">
+      <FilterMemory pageKey="/contacts" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Kontakte</h1>
         <span className="text-sm text-slate-500">{total} aus Pipedrive</span>
       </div>
 
-      <form className="card flex items-end gap-3" method="get">
+      <AutoFilterForm pageKey="/contacts" className="card flex items-end gap-3">
         <div className="min-w-[220px] flex-1">
           <label className="label">Suche</label>
           <input name="q" defaultValue={sp.q ?? ""} className="input" placeholder="Name, Organisation, E-Mail" />
         </div>
-        <button className="btn-secondary" type="submit">
-          Suchen
-        </button>
-      </form>
+      </AutoFilterForm>
 
       <div className="card">
         {total === 0 ? (

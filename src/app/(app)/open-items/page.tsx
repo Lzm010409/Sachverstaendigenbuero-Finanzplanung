@@ -7,6 +7,7 @@ import { deleteOpenItem, setOpenItemPayment, toggleOpenItemPaid } from "@/app/ac
 import { OpenItemForm } from "./open-item-form";
 import { Pagination, clampPageSize } from "@/components/pagination";
 import { PageAlerts } from "@/components/page-alerts";
+import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +85,7 @@ export default async function OpenItemsPage({
 
   return (
     <div className="space-y-6">
+      <FilterMemory pageKey="/open-items" />
       <h1 className="text-2xl font-bold text-slate-900">Offene Posten</h1>
       <p className="-mt-4 text-sm text-slate-500">
         Der offene Restbetrag fließt bis zur Bezahlung zum Fälligkeitstag in die Liquiditätsvorschau
@@ -107,7 +109,7 @@ export default async function OpenItemsPage({
       <div className="card">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-slate-700">Alle Posten</h2>
-          <form className="flex flex-wrap items-end gap-2" method="get">
+          <AutoFilterForm pageKey="/open-items" className="flex flex-wrap items-end gap-2">
             <select name="kind" defaultValue={sp.kind ?? ""} className="input w-auto py-1 text-sm">
               <option value="">Art: alle</option>
               <option value="RECEIVABLE">Forderungen</option>
@@ -121,15 +123,12 @@ export default async function OpenItemsPage({
               <option value="paid">bezahlt</option>
             </select>
             <input name="q" defaultValue={sp.q ?? ""} className="input w-40 py-1 text-sm" placeholder="Gegenpartei / Ref." />
-            <button className="btn-secondary px-3 py-1 text-sm" type="submit">
-              Filtern
-            </button>
             {(sp.kind || sp.status || sp.q) && (
-              <Link href="/open-items" className="px-2 py-1 text-sm text-slate-400 hover:text-slate-600">
+              <ClearFiltersLink pageKey="/open-items" basePath="/open-items" className="px-2 py-1 text-sm text-slate-400 hover:text-slate-600">
                 zurücksetzen
-              </Link>
+              </ClearFiltersLink>
             )}
-          </form>
+          </AutoFilterForm>
         </div>
 
         {items.length === 0 ? (

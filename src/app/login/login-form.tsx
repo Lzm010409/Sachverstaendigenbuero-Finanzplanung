@@ -3,14 +3,20 @@
 import { useActionState } from "react";
 import { microsoftLogin, passwordLogin } from "@/app/actions/auth";
 
-export function LoginForm({ microsoftEnabled }: { microsoftEnabled: boolean }) {
+export function LoginForm({
+  microsoftEnabled,
+  callbackUrl = "/",
+}: {
+  microsoftEnabled: boolean;
+  callbackUrl?: string;
+}) {
   const [state, formAction, pending] = useActionState(passwordLogin, {});
 
   return (
     <div className="space-y-4">
       {microsoftEnabled && (
         <>
-          <form action={microsoftLogin}>
+          <form action={microsoftLogin.bind(null, callbackUrl)}>
             <button type="submit" className="btn-secondary w-full">
               <span aria-hidden>🔐</span> Mit Microsoft anmelden
             </button>
@@ -24,6 +30,7 @@ export function LoginForm({ microsoftEnabled }: { microsoftEnabled: boolean }) {
       )}
 
       <form action={formAction} className="space-y-4">
+        <input type="hidden" name="callbackUrl" value={callbackUrl} />
         <div>
           <label className="label" htmlFor="password">
             Passwort

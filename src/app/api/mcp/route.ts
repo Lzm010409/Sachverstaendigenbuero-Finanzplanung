@@ -1,14 +1,17 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { agentKpis, agentForecast, agentOpenItemsAging, agentTax, agentBudgets, agentSummary } from "@/lib/agent";
+import { baseUrl, resourceUrl, verifyAccessToken } from "@/lib/oauth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 // Remote-MCP-Server (Streamable HTTP, JSON-RPC) für claude.ai-Connectoren.
 // Gibt AUSSCHLIESSLICH aggregierte, nicht-identifizierende Daten aus (siehe
-// src/lib/agent.ts). Zugriff nur mit MCP_TOKEN (Authorization: Bearer <token>
-// oder ?token=<token>). URL: https://<host>/api/mcp
+// src/lib/agent.ts). Zugriff per OAuth 2.1 (Bearer-JWT, siehe /api/oauth/*) –
+// claude.ai richtet den Connector darüber ein. Als Fallback wird weiterhin ein
+// statisches MCP_TOKEN akzeptiert (Authorization: Bearer <token> oder ?token=).
+// URL: https://<host>/api/mcp
 
 const PROTOCOL_VERSION = "2025-06-18";
 
@@ -23,17 +26,38 @@ const TOOLS = [
 
 const EMPTY_SCHEMA = { type: "object", properties: {}, additionalProperties: false };
 
-function authorized(req: NextRequest): boolean {
+function matchesStaticToken(provided: string): boolean {
   const expected = process.env.MCP_TOKEN;
-  if (!expected) return false;
-  const authz = req.headers.get("authorization");
-  const provided = authz?.toLowerCase().startsWith("bearer ")
-    ? authz.slice(7).trim()
-    : req.nextUrl.searchParams.get("token") ?? "";
-  if (!provided) return false;
+  if (!expected || !provided) return false;
   const a = createHash("sha256").update(provided).digest();
   const b = createHash("sha256").update(expected).digest();
   return timingSafeEqual(a, b);
+}
+
+// Prüft OAuth-Bearer-JWT (bevorzugt) oder das statische MCP_TOKEN (Fallback,
+// auch via ?token= für einfache Tests). Gibt true bei gültigem Zugriff.
+async function authorized(req: NextRequest): Promise<boolean> {
+  const authz = req.headers.get("authorization");
+  const bearer = authz?.toLowerCase().startsWith("bearer ") ? authz.slice(7).trim() : "";
+  const queryToken = req.nextUrl.searchParams.get("token") ?? "";
+
+  // 1) OAuth-Zugriffstoken (JWT) validieren.
+  if (bearer) {
+    const payload = await verifyAccessToken(bearer, resourceUrl(req));
+    if (payload) return true;
+  }
+  // 2) Fallback: statisches MCP_TOKEN (Header oder ?token=).
+  return matchesStaticToken(bearer || queryToken);
+}
+
+// 401 mit WWW-Authenticate + resource_metadata (RFC 9728), damit claude.ai den
+// OAuth-Flow automatisch startet.
+function unauthorized(req: NextRequest) {
+  const challenge = `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`;
+  return NextResponse.json(
+    { jsonrpc: "2.0", id: null, error: { code: -32001, message: "unauthorized" } },
+    { status: 401, headers: { "WWW-Authenticate": challenge } },
+  );
 }
 
 function rpcResult(id: unknown, result: unknown) {
@@ -44,11 +68,8 @@ function rpcError(id: unknown, code: number, message: string, status = 200) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!process.env.MCP_TOKEN) {
-    return NextResponse.json({ error: "MCP nicht konfiguriert (MCP_TOKEN fehlt)." }, { status: 503 });
-  }
-  if (!authorized(req)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  if (!(await authorized(req))) {
+    return unauthorized(req);
   }
 
   let msg: { jsonrpc?: string; id?: unknown; method?: string; params?: Record<string, unknown> };

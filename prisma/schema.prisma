@@ -265,6 +265,61 @@ model ForecastSnapshot {
   @@index([takenOn])
 }
 
+// --- OAuth 2.1 (App-eigener Authorization Server für den MCP-Connector) ---------
+// Die App ist ihr eigener OAuth-Server. claude.ai registriert sich dynamisch
+// (DCR, RFC 7591) als öffentlicher Client und nutzt Authorization-Code + PKCE.
+// Zugriffstokens sind signierte JWTs (HS256), Refresh-Tokens werden hier als
+// Hash abgelegt. Kein Client-Secret (öffentlicher Client, token_auth = none).
+
+model OAuthClient {
+  id                      String   @id @default(cuid())
+  clientName              String?
+  // Erlaubte Redirect-URIs (JSON-Array als String).
+  redirectUris            String
+  // token_endpoint_auth_method, i.d.R. "none" (öffentlicher Client + PKCE).
+  tokenEndpointAuthMethod String   @default("none")
+  grantTypes              String   @default("authorization_code,refresh_token")
+  scope                   String?
+  createdAt               DateTime @default(now())
+
+  codes  OAuthCode[]
+  tokens OAuthToken[]
+}
+
+// Kurzlebiger Authorization-Code (Single-Use, ~10 min) inkl. PKCE-Challenge.
+model OAuthCode {
+  id                  String      @id @default(cuid())
+  code                String      @unique
+  clientId            String
+  client              OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  redirectUri         String
+  scope               String      @default("")
+  codeChallenge       String
+  codeChallengeMethod String      @default("S256")
+  resource            String?
+  expiresAt           DateTime
+  consumedAt          DateTime?
+  createdAt           DateTime    @default(now())
+
+  @@index([expiresAt])
+}
+
+// Refresh-Token (als SHA-256-Hash gespeichert). Zugriffstokens sind zustandslose
+// JWTs und werden NICHT gespeichert.
+model OAuthToken {
+  id             String      @id @default(cuid())
+  refreshHash    String      @unique
+  clientId       String
+  client         OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  scope          String      @default("")
+  resource       String?
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@index([expiresAt])
+}
+
 // Szenario zur Simulation (Best/Base/Worst). Wirkt multiplikativ auf geplante
 // Zu-/Abflüsse und offene Posten und kann Zuflüsse zeitlich verzögern.
 model Scenario {

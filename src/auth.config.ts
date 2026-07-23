@@ -32,6 +32,13 @@ const authConfig = {
         path.startsWith("/login") ||
         path.startsWith("/api/auth") ||
         path === "/api/health" ||
+        // OAuth-Server + Discovery: müssen ohne App-Session erreichbar sein
+        // (claude.ai ist nicht per Session angemeldet). /api/oauth/authorize
+        // erzwingt die Session selbst und leitet sonst auf /login.
+        path.startsWith("/api/oauth") ||
+        path.startsWith("/.well-known/") ||
+        // MCP-Endpunkt authentifiziert per OAuth-Bearer/Token selbst.
+        path === "/api/mcp" ||
         // Diagnose-/Benachrichtigungs-Endpunkte erzwingen Token/Session selbst
         // (Edge-Middleware kann keine node:crypto-Prüfung ausführen).
         path === "/api/diagnostics" ||

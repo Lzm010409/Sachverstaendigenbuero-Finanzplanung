@@ -5,6 +5,7 @@ import { logout } from "@/app/actions/auth";
 import { NavLink } from "@/components/nav-link";
 import { NavGroup } from "@/components/nav-group";
 import { MobileNav } from "@/components/mobile-nav";
+import { GlobalPending } from "@/components/global-pending";
 
 // Startseite bleibt einzeln oben; alle übrigen Punkte sind in aufklappbaren
 // Bereichen gebündelt, damit die Seitenleiste kurz bleibt.
@@ -66,6 +67,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!session?.user) redirect("/login");
   return (
     <div className="flex min-h-screen">
+      <GlobalPending />
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-4 md:flex">
         <Link href="/" className="mb-6 px-2 text-lg font-bold text-brand-fg">
           Liquiditäts&shy;planung

@@ -4,6 +4,7 @@ import { formatCents } from "@/lib/money";
 import { budgetCellColor } from "@/lib/budget-color";
 import { GranularityToggle } from "@/components/granularity-toggle";
 import { PageAlerts } from "@/components/page-alerts";
+import { BreakdownRowInfo } from "./row-info";
 
 export const dynamic = "force-dynamic";
 
@@ -37,8 +38,17 @@ function Section({
         return (
           <tr key={r.categoryId ?? r.name} className="border-b border-slate-50">
             <td className="td sticky left-0 z-10 bg-white font-medium">
-              <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: r.color }} />
-              {r.name}
+              <BreakdownRowInfo
+                name={r.name}
+                color={r.color}
+                isIncome={isIncome}
+                periods={periods}
+                values={r.values}
+                periodBudget={Math.round(periodBudget)}
+                annualBudget={r.annualBudget}
+                yearActual={r.yearActual}
+                budgetPct={r.budgetPct}
+              />
             </td>
             {r.values.map((v, i) => {
               const bg = budgetCellColor(Math.abs(v), periodBudget, isIncome);

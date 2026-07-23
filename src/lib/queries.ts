@@ -8,6 +8,7 @@ import {
 } from "./forecast";
 import { addMonths, startOfDayUTC, todayUTC } from "./dates";
 import { getForecastBudgetItems } from "./budgets";
+import { budgetAnnualCents, type BudgetPeriod } from "./budget";
 
 /**
  * Aktueller Gesamtsaldo (Cent) = Summe der Anfangssalden aller aktiven Konten
@@ -163,9 +164,13 @@ export async function getPlanVsActual(monthOffset = 0): Promise<{
   );
   const monthEnd = addMonths(monthStart, 1);
 
-  const [categories, planned, txs] = await Promise.all([
+  const [categories, planned, budgets, txs] = await Promise.all([
     prisma.category.findMany({ where: { deletedAt: null } }),
     prisma.plannedItem.findMany({ where: { active: true } }),
+    prisma.budget.findMany({
+      where: { deletedAt: null, active: true, categoryId: { not: null } },
+      select: { categoryId: true, kind: true, amount: true, period: true, startDate: true, endDate: true },
+    }),
     prisma.transaction.findMany({
       where: { bookingDate: { gte: monthStart, lt: monthEnd }, account: INCLUDED_ACCOUNT },
     }),
@@ -176,11 +181,23 @@ export async function getPlanVsActual(monthOffset = 0): Promise<{
   lastOfMonth.setUTCDate(0); // letzter Tag des Monats
 
   const plannedByCat = new Map<string, number>();
+  // 1) Wiederkehrende Planposten (Planposten mit Kategorie), im Monat fällig.
   for (const p of planned) {
     const occ = occurrencesBetween(p, monthStart, lastOfMonth);
     if (occ.length === 0) continue;
     const key = p.categoryId ?? "__none__";
     plannedByCat.set(key, (plannedByCat.get(key) ?? 0) + p.amount * occ.length);
+  }
+  // 2) Budgets (Monatsbetrag = Jahreswert/12, wie auf der Übersicht),
+  //    sofern der Gültigkeitszeitraum diesen Monat überschneidet. Vorzeichen aus
+  //    der Art (Ausgabe negativ), damit es mit Planposten/Umsätzen vergleichbar ist.
+  for (const b of budgets) {
+    const startsBeforeEnd = !b.startDate || new Date(b.startDate).getTime() < monthEnd.getTime();
+    const endsAfterStart = !b.endDate || new Date(b.endDate).getTime() >= monthStart.getTime();
+    if (!startsBeforeEnd || !endsAfterStart) continue;
+    const monthly = Math.round(budgetAnnualCents(b.amount, b.period as BudgetPeriod) / 12);
+    const signed = b.kind === "EXPENSE" ? -Math.abs(monthly) : Math.abs(monthly);
+    plannedByCat.set(b.categoryId!, (plannedByCat.get(b.categoryId!) ?? 0) + signed);
   }
 
   const actualByCat = new Map<string, number>();

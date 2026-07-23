@@ -90,10 +90,10 @@ export default async function PlanActualPage({
         )}
       </div>
       <p className="text-xs text-slate-400">
-        Hinweis: „Ist" basiert auf den gebuchten Umsätzen des Monats, „Plan" auf den aktiven
-        Planposten mit Kategorie. Positive Abweichung = besser als geplant (mehr Einnahmen bzw.
-        weniger Ausgaben als vorgesehen ist nicht automatisch erkennbar – Vorzeichen folgt dem
-        Betrag).
+        Hinweis: „Ist" basiert auf den gebuchten Umsätzen des Monats. „Plan" umfasst die
+        <strong> Budgets</strong> (Monatsbetrag = Jahreswert/12, sofern in diesem Monat gültig)
+        <strong> und</strong> die aktiven <strong>Planposten</strong> mit Kategorie. Das Vorzeichen
+        folgt dem Betrag (Ausgaben negativ).
       </p>
     </div>
   );

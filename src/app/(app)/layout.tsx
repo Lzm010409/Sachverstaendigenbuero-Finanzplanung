@@ -45,6 +45,7 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string; icon: s
     items: [
       { href: "/breakdown", label: "Auswertung", icon: "📈" },
       { href: "/plan-actual", label: "Plan/Ist", icon: "📐" },
+      { href: "/plan-check", label: "Plan-Check", icon: "🧷" },
       { href: "/tax", label: "Steuer-Vorschau", icon: "🧮" },
       { href: "/concentration", label: "Klumpenrisiko", icon: "🎯" },
       { href: "/forecast-accuracy", label: "Prognose-Güte", icon: "📉" },

@@ -8,6 +8,7 @@ import { OpenItemForm } from "./open-item-form";
 import { Pagination, clampPageSize } from "@/components/pagination";
 import { PageAlerts } from "@/components/page-alerts";
 import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
+import { SortableTh } from "@/components/sortable-th";
 
 export const dynamic = "force-dynamic";
 
@@ -18,12 +19,24 @@ function amountInput(cents: number): string {
 export default async function OpenItemsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ kind?: string; status?: string; q?: string; page?: string; size?: string }>;
+  searchParams: Promise<{ kind?: string; status?: string; q?: string; page?: string; size?: string; sort?: string; dir?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
   const PAGE_SIZE = clampPageSize(sp.size);
   const today = todayUTC();
+
+  // Sortierung (serverseitig, über klickbare Spaltenköpfe).
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const sortMap: Record<string, Prisma.OpenItemOrderByWithRelationInput> = {
+    kind: { kind: dir },
+    counterparty: { counterparty: dir },
+    dueDate: { dueDate: dir },
+    amount: { amount: dir },
+    status: { paid: dir },
+  };
+  const orderBy: Prisma.OpenItemOrderByWithRelationInput[] =
+    sp.sort && sortMap[sp.sort] ? [sortMap[sp.sort]] : [{ paid: "asc" }, { dueDate: "asc" }];
 
   // Filter -> Prisma-Where
   const where: Prisma.OpenItemWhereInput = {};
@@ -49,7 +62,7 @@ export default async function OpenItemsPage({
   const [items, matchCount, categories, unpaidAll] = await Promise.all([
     prisma.openItem.findMany({
       where,
-      orderBy: [{ paid: "asc" }, { dueDate: "asc" }],
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
       include: { category: true },
@@ -70,6 +83,8 @@ export default async function OpenItemsPage({
   const overdueCount = unpaid.filter((i) => new Date(i.dueDate) < today).length;
 
   const filterParams = { kind: sp.kind, status: sp.status, q: sp.q, size: PAGE_SIZE !== 50 ? String(PAGE_SIZE) : undefined };
+  const sortParams = { ...filterParams, sort: sp.sort, dir: sp.dir };
+  // Für die Sortier-Köpfe: nur Filter beibehalten (sort/dir setzt SortableTh selbst).
 
   // KPI-Karten sind Drilldowns: sie setzen den passenden Tabellenfilter.
   const kpi = (href: string, active: boolean, label: string, value: string, tone: string) => (
@@ -138,12 +153,12 @@ export default async function OpenItemsPage({
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="th">Art</th>
-                    <th className="th">Gegenpartei / Referenz</th>
-                    <th className="th">Fällig</th>
-                    <th className="th text-right">Betrag / Offen</th>
-                    <th className="th">Status</th>
+                  <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                    <SortableTh col="kind" label="Art" sort={sp.sort ?? ""} dir={dir} basePath="/open-items" params={filterParams} />
+                    <SortableTh col="counterparty" label="Gegenpartei / Referenz" sort={sp.sort ?? ""} dir={dir} basePath="/open-items" params={filterParams} />
+                    <SortableTh col="dueDate" label="Fällig" sort={sp.sort ?? ""} dir={dir} basePath="/open-items" params={filterParams} />
+                    <SortableTh col="amount" label="Betrag / Offen" sort={sp.sort ?? ""} dir={dir} basePath="/open-items" params={filterParams} align="right" />
+                    <SortableTh col="status" label="Status" sort={sp.sort ?? ""} dir={dir} basePath="/open-items" params={filterParams} />
                     <th className="th">Teilzahlung</th>
                     <th className="th"></th>
                   </tr>
@@ -231,7 +246,7 @@ export default async function OpenItemsPage({
               totalItems={matchCount}
               pageSize={PAGE_SIZE}
               basePath="/open-items"
-              params={filterParams}
+              params={sortParams}
             />
           </>
         )}

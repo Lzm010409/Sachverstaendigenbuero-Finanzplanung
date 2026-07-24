@@ -383,3 +383,42 @@ export async function fetchTransactions(
   }
   return out;
 }
+
+// Diagnose: liest aus, wie sevDesk Mahnungen/Mahnstufen in Rechnungsobjekten
+// abbildet (Feldnamen + Verteilung nach invoiceType). Ausgabe nur in die Logs
+// (keine Namen/Beträge). Grundlage, um die Mahnstufe automatisch zu übernehmen.
+export async function fetchInvoiceDunningInfo(token: string): Promise<{
+  total: number;
+  byType: Record<string, number>;
+  dunningKeys: string[];
+  allKeys: string[];
+  samples: { type: string; status: string; sendType: string; values: Record<string, unknown> }[];
+}> {
+  const objs = await sevGet(`/Invoice?limit=1000`, token);
+  const byType: Record<string, number> = {};
+  const dunningKeysSeen = new Set<string>();
+  const samples: { type: string; status: string; sendType: string; values: Record<string, unknown> }[] = [];
+  let allKeys: string[] = [];
+  for (const o of objs) {
+    const type = String(o.invoiceType ?? "?");
+    byType[type] = (byType[type] ?? 0) + 1;
+    if (!allKeys.length) allKeys = Object.keys(o).sort();
+    const dk = Object.keys(o).filter((k) => /dunn|mahn|reminder/i.test(k));
+    for (const k of dk) dunningKeysSeen.add(k);
+    const hasDunn = dk.some((k) => {
+      const v = o[k];
+      return v != null && v !== 0 && v !== "0" && v !== "";
+    });
+    if ((type !== "RE" && type !== "?") || hasDunn) {
+      if (samples.length < 40) {
+        samples.push({
+          type,
+          status: String(o.status ?? ""),
+          sendType: String(o.sendType ?? ""),
+          values: Object.fromEntries(dk.map((k) => [k, o[k]])),
+        });
+      }
+    }
+  }
+  return { total: objs.length, byType, dunningKeys: [...dunningKeysSeen], allKeys, samples };
+}

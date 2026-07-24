@@ -1,29 +1,61 @@
 import Link from "next/link";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { getReceivablesReport, REMINDER_LABELS, suggestedReminderLevel } from "@/lib/receivables";
 import { setReminderLevel } from "@/app/actions/openitems";
 import { todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
 import { PageAlerts } from "@/components/page-alerts";
+import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
+import { SortableTh } from "@/components/sortable-th";
 
 export const dynamic = "force-dynamic";
 
 const REMINDER_STYLE = ["text-slate-400", "text-sky-600", "text-amber-600", "text-red-600"];
 
-export default async function ReceivablesPage() {
+export default async function ReceivablesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; status?: string; level?: string; sort?: string; dir?: string }>;
+}) {
+  const sp = await searchParams;
   const today = todayUTC();
+
+  // Filter
+  const where: Prisma.OpenItemWhereInput = { kind: "RECEIVABLE", paid: false };
+  if (sp.status === "overdue") where.dueDate = { lt: today };
+  if (sp.level && /^[0-3]$/.test(sp.level)) where.reminderLevel = Number(sp.level);
+  if (sp.q) {
+    where.OR = [
+      { counterparty: { contains: sp.q, mode: "insensitive" } },
+      { reference: { contains: sp.q, mode: "insensitive" } },
+    ];
+  }
+
+  // Sortierung
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const sortMap: Record<string, Prisma.OpenItemOrderByWithRelationInput> = {
+    counterparty: { counterparty: dir },
+    dueDate: { dueDate: dir },
+    amount: { amount: dir },
+    reminderLevel: { reminderLevel: dir },
+  };
+  const orderBy: Prisma.OpenItemOrderByWithRelationInput[] =
+    sp.sort && sortMap[sp.sort] ? [sortMap[sp.sort]] : [{ dueDate: "asc" }];
+
   const [report, items] = await Promise.all([
     getReceivablesReport(),
-    prisma.openItem.findMany({
-      where: { kind: "RECEIVABLE", paid: false },
-      orderBy: { dueDate: "asc" },
-    }),
+    prisma.openItem.findMany({ where, orderBy }),
   ]);
   const openOf = (i: { amount: number; paidAmount: number }) => Math.max(0, i.amount - i.paidAmount);
   const open = items.filter((i) => openOf(i) > 0);
 
+  const hasFilter = !!(sp.q || sp.status || sp.level);
+  const filterParams = { q: sp.q, status: sp.status, level: sp.level };
+
   return (
     <div className="space-y-6">
+      <FilterMemory pageKey="/receivables" />
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Forderungsmanagement</h1>
         <p className="text-sm text-slate-500">Alterstruktur, Zahlungsdauer (DSO) und Mahnstufen.</p>
@@ -64,18 +96,39 @@ export default async function ReceivablesPage() {
       </div>
 
       <div className="card">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Offene Forderungen &amp; Mahnstufen</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-700">Offene Forderungen &amp; Mahnstufen ({open.length})</h2>
+          <AutoFilterForm pageKey="/receivables" className="flex flex-wrap items-end gap-2">
+            <select name="status" defaultValue={sp.status ?? ""} className="input w-auto py-1 text-sm">
+              <option value="">Status: alle</option>
+              <option value="overdue">nur überfällig</option>
+            </select>
+            <select name="level" defaultValue={sp.level ?? ""} className="input w-auto py-1 text-sm">
+              <option value="">Mahnstufe: alle</option>
+              {REMINDER_LABELS.map((l, idx) => (
+                <option key={idx} value={idx}>{idx}. {l}</option>
+              ))}
+            </select>
+            <input name="q" defaultValue={sp.q ?? ""} className="input w-40 py-1 text-sm" placeholder="Auftraggeber / Ref." />
+            {hasFilter && (
+              <ClearFiltersLink pageKey="/receivables" basePath="/receivables" className="px-2 py-1 text-sm text-slate-400 hover:text-slate-600">
+                zurücksetzen
+              </ClearFiltersLink>
+            )}
+          </AutoFilterForm>
+        </div>
+
         {open.length === 0 ? (
-          <p className="text-sm text-slate-400">Keine offenen Forderungen. 🎉</p>
+          <p className="text-sm text-slate-400">{hasFilter ? "Keine Forderungen für diesen Filter." : "Keine offenen Forderungen. 🎉"}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="th">Auftraggeber / Referenz</th>
-                  <th className="th">Fällig</th>
-                  <th className="th text-right">Offen</th>
-                  <th className="th">Mahnstufe</th>
+                  <SortableTh col="counterparty" label="Auftraggeber / Referenz" sort={sp.sort ?? ""} dir={dir} basePath="/receivables" params={filterParams} />
+                  <SortableTh col="dueDate" label="Fällig" sort={sp.sort ?? ""} dir={dir} basePath="/receivables" params={filterParams} />
+                  <SortableTh col="amount" label="Offen" sort={sp.sort ?? ""} dir={dir} basePath="/receivables" params={filterParams} align="right" />
+                  <SortableTh col="reminderLevel" label="Mahnstufe" sort={sp.sort ?? ""} dir={dir} basePath="/receivables" params={filterParams} />
                 </tr>
               </thead>
               <tbody>

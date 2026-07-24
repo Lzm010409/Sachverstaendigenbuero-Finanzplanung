@@ -15,6 +15,23 @@ const RHYTHM: Record<string, string> = {
   YEARLY: "jährlich",
 };
 
+// Einheit für „alle N …" (Intervall = jede/r n-te). Singular/Plural.
+const UNIT: Record<string, [string, string]> = {
+  WEEKLY: ["Woche", "Wochen"],
+  MONTHLY: ["Monat", "Monate"],
+  QUARTERLY: ["Quartal", "Quartale"],
+  YEARLY: ["Jahr", "Jahre"],
+};
+
+/** Klarer Rhythmus-Text: „wöchentlich" bzw. bei Intervall>1 „alle N Wochen". */
+export function rhythmLabel(recurrence: string, interval: number): string {
+  if (recurrence === "ONCE") return RHYTHM.ONCE;
+  const n = Math.max(1, Math.floor(interval || 1));
+  if (n === 1) return RHYTHM[recurrence] ?? recurrence;
+  const unit = UNIT[recurrence];
+  return unit ? `alle ${n} ${n === 1 ? unit[0] : unit[1]}` : `${RHYTHM[recurrence]} (×${n})`;
+}
+
 export interface PlannedRowData {
   id: string;
   name: string;
@@ -74,6 +91,9 @@ export function PlannedRow({ item, categories }: { item: PlannedRowData; categor
             <div>
               <label className="label">Intervall (jede/r n-te)</label>
               <input name="interval" type="number" min={1} defaultValue={item.interval} className="input" />
+              <p className="mt-1 text-xs text-slate-400">
+                1 = jede Periode. „wöchentlich" + 4 = alle 4 Wochen.
+              </p>
             </div>
             <div>
               <label className="label">Ab Datum</label>
@@ -108,10 +128,7 @@ export function PlannedRow({ item, categories }: { item: PlannedRowData; categor
         {item.name}
         {item.categoryName && <span className="ml-2 text-xs text-slate-400">{item.categoryName}</span>}
       </td>
-      <td className="td">
-        {RHYTHM[item.recurrence]}
-        {item.interval > 1 ? ` (×${item.interval})` : ""}
-      </td>
+      <td className="td">{rhythmLabel(item.recurrence, item.interval)}</td>
       <td className="td">{new Date(item.startDate).toLocaleDateString("de-DE")}</td>
       <td className="td">{item.endDate ? new Date(item.endDate).toLocaleDateString("de-DE") : "offen"}</td>
       <td className={`td text-right font-semibold ${item.amount < 0 ? "text-red-600" : "text-emerald-600"}`}>

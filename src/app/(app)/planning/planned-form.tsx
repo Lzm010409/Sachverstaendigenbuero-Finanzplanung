@@ -52,6 +52,9 @@ export function PlannedForm({ categories }: { categories: CatOpt[] }) {
         <div>
           <label className="label">Intervall (jede/r n-te)</label>
           <input name="interval" type="number" min={1} defaultValue={1} className="input" />
+          <p className="mt-1 text-xs text-slate-400">
+            1 = jede Periode. Beispiel: „wöchentlich" + 4 = <strong>alle 4 Wochen</strong> (nicht 4× pro Woche).
+          </p>
         </div>
       )}
       <div>

@@ -19,14 +19,20 @@ function Section({
   rows,
   periods,
   divisor,
+  elapsed,
 }: {
   title: string;
   rows: BreakdownRow[];
   periods: { key: string; label: string; start: Date; end: Date }[];
   divisor: number;
+  elapsed: number; // verstrichener Jahresanteil (0..1) für die Hochrechnung
 }) {
   if (rows.length === 0) return null;
   const isIncomeSection = rows[0].kind === "INCOME";
+  // Hochrechnung nur sinnvoll im laufenden (noch nicht abgeschlossenen) Jahr.
+  const showProjection = elapsed > 0.02 && elapsed < 0.995;
+  const projPctOf = (yearActual: number, annualBudget: number) =>
+    annualBudget > 0 ? Math.round((yearActual / elapsed / annualBudget) * 100) : null;
   // Kumulierte Werte der Sektion: Spaltensummen (Ist je Zeitraum) sowie
   // Jahres-Ist/-Budget (nur Kategorien mit Budget) für den Ist/Soll-Vergleich.
   const periodSums = periods.map((_, i) => rows.reduce((s, r) => s + (r.values[i] ?? 0), 0));
@@ -95,6 +101,18 @@ function Section({
               }
             >
               {pctLabel(r.budgetPct)}
+              {showProjection && r.annualBudget > 0 && (() => {
+                const pp = projPctOf(r.yearActual, r.annualBudget)!;
+                const breach = !isIncome && pp > 100;
+                return (
+                  <div
+                    className={`text-[10px] font-normal ${breach ? "text-red-600" : "text-slate-400"}`}
+                    title={`Hochrechnung Jahresende (linear): ${pp} % des Jahresbudgets`}
+                  >
+                    {breach ? "⚠ " : "→ "}{pp} % Prog.
+                  </div>
+                );
+              })()}
             </td>
           </tr>
         );
@@ -124,6 +142,18 @@ function Section({
           title={sumBudget > 0 ? `Ist ${formatCents(isIncomeSection ? sumActual : -sumActual)} / Soll ${formatCents(isIncomeSection ? sumBudget : -sumBudget)}` : undefined}
         >
           {sumPct != null ? `${sumPct} %` : "–"}
+          {showProjection && sumBudget > 0 && (() => {
+            const pp = projPctOf(sumActual, sumBudget)!;
+            const breach = !isIncomeSection && pp > 100;
+            return (
+              <div
+                className={`text-[10px] font-normal ${breach ? "text-red-600" : "text-slate-400"}`}
+                title={`Hochrechnung Jahresende (linear): ${pp} % des Gesamtbudgets`}
+              >
+                {breach ? "⚠ " : "→ "}{pp} % Prog.
+              </div>
+            );
+          })()}
         </td>
       </tr>
     </>
@@ -155,6 +185,11 @@ export default async function BreakdownPage({
   const pct = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) : null);
   const incPct = pct(incActual, incBudget);
   const expPct = pct(expActual, expBudget);
+  // Lineare Hochrechnung aufs Jahresende (nur im laufenden Jahr sinnvoll).
+  const elapsed = data.yearElapsedFraction;
+  const showProj = elapsed > 0.02 && elapsed < 0.995;
+  const projIncPct = showProj ? pct(incActual / elapsed, incBudget) : null;
+  const projExpPct = showProj ? pct(expActual / elapsed, expBudget) : null;
 
   return (
     <div className="space-y-6">
@@ -205,8 +240,8 @@ export default async function BreakdownPage({
               </tr>
             </thead>
             <tbody>
-              <Section title="Einnahmen" rows={data.incomeRows} periods={data.periods} divisor={data.periodBudgetDivisor} />
-              <Section title="Ausgaben" rows={data.expenseRows} periods={data.periods} divisor={data.periodBudgetDivisor} />
+              <Section title="Einnahmen" rows={data.incomeRows} periods={data.periods} divisor={data.periodBudgetDivisor} elapsed={data.yearElapsedFraction} />
+              <Section title="Ausgaben" rows={data.expenseRows} periods={data.periods} divisor={data.periodBudgetDivisor} elapsed={data.yearElapsedFraction} />
             </tbody>
           </table>
         )}
@@ -219,13 +254,16 @@ export default async function BreakdownPage({
         <strong> „Summe Einnahmen/Ausgaben"</strong> kumuliert je Zeitraum (Ist) sowie das gesamte
         Jahresbudget (Soll) und dessen Auslastung. Der Wert <strong>„… % Budget"</strong> je Monat zeigt,
         wie viel des <em>anteiligen</em> Gesamtbudgets (Jahresbudget ÷ 12 bzw. ÷ 52 je Woche) in diesem
-        Zeitraum verbraucht wurde. Das Feld unten rechts zeigt den Jahres-Ist/Soll-Vergleich.
+        Zeitraum verbraucht wurde. Das Feld unten rechts zeigt den Jahres-Ist/Soll-Vergleich. Die Angabe
+        <strong> „→ … % Prog."</strong> ist die lineare <strong>Hochrechnung aufs Jahresende</strong>
+        (Ist ÷ bereits verstrichener Jahresanteil); <strong>⚠</strong> markiert ein voraussichtlich
+        gerissenes Ausgabenbudget (&gt; 100 %).
       </p>
 
       {hasRows && (incPct != null || expPct != null) && (
         <div className="fixed bottom-4 right-4 z-40 rounded-lg border border-slate-200 bg-white/95 px-4 py-2.5 text-sm shadow-lg backdrop-blur">
           <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            Budget Ist / Soll (Jahr)
+            Budget Ist / Soll{showProj ? " · → Prognose" : ""} (Jahr)
           </div>
           <div className="space-y-1">
             <div className="flex items-center justify-between gap-4">
@@ -236,6 +274,7 @@ export default async function BreakdownPage({
               <span className="tabular-nums text-slate-600">
                 {formatCents(incActual)} / {formatCents(incBudget)}
                 <strong className="ml-2 text-emerald-700">{incPct != null ? `${incPct} %` : "–"}</strong>
+                {projIncPct != null && <span className="ml-1 text-slate-400" title="Hochrechnung Jahresende">→ {projIncPct} %</span>}
               </span>
             </div>
             <div className="flex items-center justify-between gap-4">
@@ -248,6 +287,11 @@ export default async function BreakdownPage({
                 <strong className={`ml-2 ${expPct != null && expPct > 100 ? "text-red-600" : "text-slate-800"}`}>
                   {expPct != null ? `${expPct} %` : "–"}
                 </strong>
+                {projExpPct != null && (
+                  <span className={`ml-1 ${projExpPct > 100 ? "font-semibold text-red-600" : "text-slate-400"}`} title="Hochrechnung Jahresende">
+                    {projExpPct > 100 ? "⚠ " : "→ "}{projExpPct} %
+                  </span>
+                )}
               </span>
             </div>
           </div>

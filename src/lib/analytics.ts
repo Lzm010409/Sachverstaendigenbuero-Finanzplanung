@@ -73,6 +73,7 @@ export interface BreakdownResult {
   granularity: Granularity;
   periods: Period[];
   periodBudgetDivisor: number; // 12 (Monat), 52 (Woche), 1 (Jahr)
+  yearElapsedFraction: number; // Anteil des Bezugsjahres, der bereits vergangen ist (0..1)
   incomeRows: BreakdownRow[];
   expenseRows: BreakdownRow[];
 }
@@ -164,10 +165,18 @@ export async function getCategoryBreakdown(
     return hasData;
   });
 
+  // Verstrichener Anteil des Bezugsjahres (für die Budget-Hochrechnung). Bei
+  // abgeschlossenen (vergangenen) Jahren = 1.
+  const yearElapsedFraction = Math.min(
+    1,
+    Math.max(0, (base.getTime() - yearStart.getTime()) / (yearEnd.getTime() - yearStart.getTime())),
+  );
+
   return {
     granularity,
     periods,
     periodBudgetDivisor: divisor,
+    yearElapsedFraction,
     incomeRows: rows.filter((r) => r.kind === "INCOME").sort((a, b) => a.name.localeCompare(b.name)),
     expenseRows: rows
       .filter((r) => r.kind !== "INCOME")

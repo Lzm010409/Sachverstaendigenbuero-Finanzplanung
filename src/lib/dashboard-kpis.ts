@@ -18,6 +18,7 @@ export interface KpiDescriptor {
   tone?: KpiTone;
   hint?: string;
   href?: string;
+  group?: string;
 }
 
 // Standardmäßig sichtbare KPIs (Reihenfolge = Anzeige). Der Rest ist über den
@@ -116,5 +117,29 @@ export async function getDashboardKpis(): Promise<KpiDescriptor[]> {
     { id: "topDebtor", label: "Klumpenrisiko (Top-1)", value: conc.debtors.length ? pct(conc.top1Share) : "–", tone: conc.top1Share > 0.4 ? "warning" : "default", hint: "Anteil größter Debitor", href: "/concentration" },
   ];
 
+  for (const k of list) k.group = KPI_GROUP[k.id] ?? "Weitere";
   return list;
 }
+
+// Gruppierung der KPIs (für Dashboard-Anpassung und Berichts-Konfiguration).
+export const KPI_GROUP: Record<string, string> = {
+  balance: "Bestand & Basis", income3m: "Bestand & Basis", expense3m: "Bestand & Basis",
+  netMonthly: "Bestand & Basis", runway: "Bestand & Basis", workingCapital: "Bestand & Basis",
+  incomeMTD: "Monat (laufend)", expenseMTD: "Monat (laufend)", netMTD: "Monat (laufend)",
+  incomeGrowth: "Monat (laufend)", expenseRatio: "Monat (laufend)",
+  openReceivables: "Forderungen & Verbindlichkeiten", overdueReceivables: "Forderungen & Verbindlichkeiten",
+  dso: "Forderungen & Verbindlichkeiten", openPayables: "Forderungen & Verbindlichkeiten",
+  payables30: "Forderungen & Verbindlichkeiten", coverage: "Forderungen & Verbindlichkeiten",
+  forecast30: "Prognose", forecast90: "Prognose", lowPoint13w: "Prognose", minBuffer: "Prognose",
+  vatNext: "Steuer & Risiko", topDebtor: "Steuer & Risiko",
+};
+
+// Reihenfolge der Gruppen für die Anzeige.
+export const KPI_GROUP_ORDER = [
+  "Bestand & Basis",
+  "Monat (laufend)",
+  "Forderungen & Verbindlichkeiten",
+  "Prognose",
+  "Steuer & Risiko",
+  "Weitere",
+];

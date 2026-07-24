@@ -158,12 +158,12 @@ export function ActionToaster() {
   return (
     <>
       {bar && (
-        <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-[3px] overflow-hidden bg-brand/15">
+        <div aria-hidden className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-[3px] overflow-hidden bg-brand/15 print:hidden">
           <div className="jd-progress-bar h-full w-full" />
         </div>
       )}
       {toasts.length > 0 && (
-        <div className="fixed right-4 top-4 z-[100] flex flex-col items-end gap-2.5">
+        <div className="fixed right-4 top-4 z-[100] flex flex-col items-end gap-2.5 print:hidden">
           {toasts.map((t) => (
             <div
               key={t.id}

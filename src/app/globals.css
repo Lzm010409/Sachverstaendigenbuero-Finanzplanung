@@ -89,3 +89,70 @@ h1, h2, h3, h4, h5, h6 {
   border-top-color: var(--jd-primary);
   animation: jd-spin 0.6s linear infinite;
 }
+
+/* -------- Druck / PDF-Bericht -------- */
+@media print {
+  /* Seitenränder des PDFs. */
+  @page {
+    size: A4;
+    margin: 14mm;
+  }
+
+  /* Hintergrundfarben/-flächen im PDF beibehalten (Badges, Zeilen, Header). */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* App-Rahmen (Seitenleiste, mobile Navigation, Toaster) nicht mitdrucken. */
+  aside,
+  [data-no-print],
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Inhalt über die volle Seitenbreite, ohne Bildschirm-Padding. */
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body {
+    background: #fff !important;
+  }
+
+  /* Karten: dezente Kontur statt Schatten, damit sie im PDF sauber wirken. */
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px;
+  }
+
+  /* Abschnitte möglichst nicht über einen Seitenumbruch zerreißen. */
+  .report-section {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Tabellenzeilen nicht mitten im Umbruch trennen; Kopf je Seite wiederholen. */
+  thead {
+    display: table-header-group;
+  }
+  tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
+/* Kompaktere Tabellen im PDF, damit breite Matrizen zuverlässig auf A4 passen. */
+@media print {
+  .report-print table {
+    font-size: 10.5px;
+  }
+  .report-print th,
+  .report-print td {
+    padding-top: 3px;
+    padding-bottom: 3px;
+  }
+}

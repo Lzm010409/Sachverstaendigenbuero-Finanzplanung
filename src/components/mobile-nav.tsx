@@ -33,7 +33,7 @@ export function MobileNav({
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden print:hidden">
         <Link href="/" className="text-base font-bold text-brand-fg">
           Liquiditäts&shy;planung
         </Link>

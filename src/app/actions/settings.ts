@@ -191,11 +191,20 @@ export async function syncSevdeskDocuments(): Promise<SevdeskDocsResult> {
   });
   const byKey = new Map(existingItems.map((e) => [`${e.source}:${e.externalId}`, e]));
 
+  // Im Tool gelöschte sevDesk-Posten dauerhaft überspringen (nicht neu anlegen).
+  const ignoredRows = await prisma.ignoredSevItem.findMany({ select: { source: true, externalId: true } });
+  const ignoredKeys = new Set(ignoredRows.map((r) => `${r.source}:${r.externalId}`));
+
   const seen = new Set<string>();
   let receivables = 0;
   let payables = 0;
+  let skippedIgnored = 0;
   for (const it of items) {
     const key = `${it.source}:${it.externalId}`;
+    if (ignoredKeys.has(key)) {
+      skippedIgnored++;
+      continue;
+    }
     seen.add(key);
     const clipped = it.counterparty.length > 160 ? it.counterparty.slice(0, 160) : it.counterparty;
     const cur = byKey.get(key);

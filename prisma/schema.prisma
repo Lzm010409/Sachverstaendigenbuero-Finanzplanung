@@ -249,6 +249,20 @@ model ForecastSnapshot {
   @@index([takenOn])
 }
 
+// Im Tool gelöschte sevDesk-Posten. Der Beleg-Sync überspringt diese dauerhaft,
+// damit sie nicht wieder importiert werden (z. B. „Belegleichen", die in sevDesk
+// nicht mehr gelöscht werden können).
+model IgnoredSevItem {
+  id           String   @id @default(cuid())
+  source       String // z.B. "sevdesk-invoice" / "sevdesk-voucher"
+  externalId   String // ID im Quellsystem
+  reference    String?
+  counterparty String?
+  createdAt    DateTime @default(now())
+
+  @@unique([source, externalId])
+}
+
 // --- OAuth 2.1 (App-eigener Authorization Server für den MCP-Connector) ---------
 // Die App ist ihr eigener OAuth-Server. claude.ai registriert sich dynamisch
 // (DCR, RFC 7591) als öffentlicher Client und nutzt Authorization-Code + PKCE.

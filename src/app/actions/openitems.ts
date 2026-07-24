@@ -80,6 +80,20 @@ export async function setOpenItemPayment(formData: FormData) {
 export async function deleteOpenItem(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   if (!id) return;
+  const item = await prisma.openItem.findUnique({
+    where: { id },
+    select: { source: true, externalId: true, reference: true, counterparty: true },
+  });
+  if (!item) return;
+  // sevDesk-Posten dauerhaft ignorieren, damit der nächste Sync sie NICHT wieder
+  // anlegt (z.B. „Belegleichen", die in sevDesk nicht mehr löschbar sind).
+  if (item.source?.startsWith("sevdesk") && item.externalId) {
+    await prisma.ignoredSevItem.upsert({
+      where: { source_externalId: { source: item.source, externalId: item.externalId } },
+      update: {},
+      create: { source: item.source, externalId: item.externalId, reference: item.reference, counterparty: item.counterparty },
+    });
+  }
   await prisma.openItem.delete({ where: { id } });
   revalidatePath("/open-items");
   revalidatePath("/");

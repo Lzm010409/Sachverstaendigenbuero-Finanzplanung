@@ -427,3 +427,37 @@ export async function fetchInvoiceDunningInfo(token: string): Promise<{
   }
   return { total: objs.length, byType, dunningKeys: [...dunningKeysSeen], allKeys, samples };
 }
+
+// Diagnose: wie kennzeichnet sevDesk WIEDERKEHRENDE Belege? Gibt Feldnamen +
+// Verteilung + Beispielwerte aus (nur zur Analyse in den Logs, keine Namen).
+export async function fetchVoucherRecurringInfo(token: string): Promise<{
+  total: number;
+  recurKeys: string[];
+  allKeys: string[];
+  byRecurring: Record<string, number>;
+  samples: { status: string; voucherType: string; values: Record<string, unknown> }[];
+}> {
+  const objs = await sevGet(`/Voucher?limit=1000`, token);
+  const recurKeysSeen = new Set<string>();
+  const byRecurring: Record<string, number> = {};
+  const samples: { status: string; voucherType: string; values: Record<string, unknown> }[] = [];
+  let allKeys: string[] = [];
+  for (const o of objs) {
+    if (!allKeys.length) allKeys = Object.keys(o).sort();
+    const rk = Object.keys(o).filter((k) => /recur|interval|wiederk|cycle|repeat/i.test(k));
+    for (const k of rk) recurKeysSeen.add(k);
+    const hasRecur = rk.some((k) => {
+      const v = o[k];
+      return v != null && v !== "" && v !== "0" && v !== 0;
+    });
+    byRecurring[hasRecur ? "recurring" : "single"] = (byRecurring[hasRecur ? "recurring" : "single"] ?? 0) + 1;
+    if (hasRecur && samples.length < 25) {
+      samples.push({
+        status: String(o.status ?? ""),
+        voucherType: String(o.voucherType ?? ""),
+        values: Object.fromEntries(rk.map((k) => [k, o[k]])),
+      });
+    }
+  }
+  return { total: objs.length, recurKeys: [...recurKeysSeen], allKeys, byRecurring, samples };
+}

@@ -3,7 +3,9 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { formatCents } from "@/lib/money";
 import { todayUTC } from "@/lib/dates";
-import { deleteOpenItem, setOpenItemPayment, toggleOpenItemPaid } from "@/app/actions/openitems";
+import { deleteOpenItem, reactivateIgnoredSevItem, setOpenItemPayment, toggleOpenItemPaid } from "@/app/actions/openitems";
+import { setExcludeRecurringVouchers } from "@/app/actions/settings";
+import { getSetting } from "@/lib/settings";
 import { OpenItemForm } from "./open-item-form";
 import { Pagination, clampPageSize } from "@/components/pagination";
 import { PageAlerts } from "@/components/page-alerts";
@@ -59,7 +61,7 @@ export default async function OpenItemsPage({
 
   const openOf = (i: { amount: number; paidAmount: number }) => Math.max(0, i.amount - i.paidAmount);
 
-  const [items, matchCount, categories, unpaidAll] = await Promise.all([
+  const [items, matchCount, categories, unpaidAll, ignoredItems, excludeRecurringSetting] = await Promise.all([
     prisma.openItem.findMany({
       where,
       orderBy,
@@ -74,7 +76,11 @@ export default async function OpenItemsPage({
       where: { paid: false },
       select: { kind: true, amount: true, paidAmount: true, dueDate: true },
     }),
+    // Gelöschte/ignorierte sevDesk-Posten (reversibel wieder aktivierbar).
+    prisma.ignoredSevItem.findMany({ orderBy: { createdAt: "desc" } }),
+    getSetting("sevdesk.excludeRecurring"),
   ]);
+  const excludeRecurring = excludeRecurringSetting !== "false";
   const totalPages = Math.ceil(matchCount / PAGE_SIZE);
 
   const unpaid = unpaidAll.filter((i) => openOf(i) > 0);
@@ -109,6 +115,23 @@ export default async function OpenItemsPage({
       </p>
 
       <PageAlerts page="/open-items" />
+
+      <div className="card flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-700">Wiederkehrende Belege ausschließen</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            sevDesk-Beleg­vorlagen mit Wiederholung (Typ „RV") werden meist einmalig erstellt und
+            erscheinen sonst dauerhaft als fällig. Ihre Liquidität ist i.d.R. bereits über Planposten
+            abgedeckt. {excludeRecurring ? "Aktuell werden sie beim Import übersprungen." : "Aktuell werden sie mit importiert."}
+          </p>
+        </div>
+        <form action={setExcludeRecurringVouchers}>
+          <input type="hidden" name="enabled" value={excludeRecurring ? "false" : "true"} />
+          <button className={excludeRecurring ? "btn-secondary" : "btn-primary"}>
+            {excludeRecurring ? "Wieder importieren" : "Ausschließen aktivieren"}
+          </button>
+        </form>
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         {kpi("/open-items?kind=RECEIVABLE", sp.kind === "RECEIVABLE", "Offene Forderungen", formatCents(receivables), "text-emerald-600")}
@@ -251,6 +274,50 @@ export default async function OpenItemsPage({
           </>
         )}
       </div>
+
+      {ignoredItems.length > 0 && (
+        <div className="card">
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">Ignorierte sevDesk-Belege</h2>
+          <p className="mb-3 text-xs text-slate-500">
+            Diese Posten wurden hier gelöscht und werden beim Sync nicht wieder importiert
+            (z.&nbsp;B. „Belegleichen", die in sevDesk nicht mehr löschbar sind). „Wieder aktivieren"
+            hebt das Ignorieren auf – der nächste Sync importiert den Posten erneut.
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="th">Quelle</th>
+                  <th className="th">Gegenpartei</th>
+                  <th className="th">Referenz</th>
+                  <th className="th">Ignoriert seit</th>
+                  <th className="th"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {ignoredItems.map((ig) => (
+                  <tr key={ig.id} className="border-b border-slate-50">
+                    <td className="td whitespace-nowrap text-xs text-slate-500">
+                      {ig.source === "sevdesk-invoice" ? "Rechnung" : ig.source === "sevdesk-voucher" ? "Beleg" : ig.source}
+                    </td>
+                    <td className="td">{ig.counterparty || "—"}</td>
+                    <td className="td text-slate-500">{ig.reference || "—"}</td>
+                    <td className="td whitespace-nowrap text-xs text-slate-400">
+                      {new Date(ig.createdAt).toLocaleDateString("de-DE")}
+                    </td>
+                    <td className="td text-right">
+                      <form action={reactivateIgnoredSevItem}>
+                        <input type="hidden" name="id" value={ig.id} />
+                        <button className="text-xs text-brand hover:underline">wieder aktivieren</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

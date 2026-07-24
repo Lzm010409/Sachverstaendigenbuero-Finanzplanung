@@ -99,6 +99,17 @@ export async function deleteOpenItem(formData: FormData) {
   revalidatePath("/");
 }
 
+/**
+ * Hebt das Ignorieren eines zuvor gelöschten sevDesk-Postens wieder auf, damit
+ * der nächste Sync ihn erneut importiert (reversibel).
+ */
+export async function reactivateIgnoredSevItem(formData: FormData) {
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await prisma.ignoredSevItem.delete({ where: { id } }).catch(() => {});
+  revalidatePath("/open-items");
+}
+
 /** Setzt die Mahnstufe (0–3) einer Forderung. */
 export async function setReminderLevel(formData: FormData) {
   const id = String(formData.get("id") ?? "");

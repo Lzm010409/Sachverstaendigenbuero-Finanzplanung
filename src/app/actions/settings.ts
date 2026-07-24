@@ -5,6 +5,7 @@ import { prisma } from "@/lib/db";
 import {
   getPipedriveDomain,
   getPipedriveToken,
+  getSetting,
   getSevdeskToken,
   setSetting,
 } from "@/lib/settings";
@@ -41,6 +42,14 @@ export async function savePipedriveConfig(formData: FormData) {
   if (token) await setSetting("pipedrive.token", token);
   if (domain) await setSetting("pipedrive.domain", domain);
   revalidatePath("/settings");
+}
+
+/** Schaltet den Ausschluss wiederkehrender sevDesk-Belege beim Import um. */
+export async function setExcludeRecurringVouchers(formData: FormData) {
+  const enabled = String(formData.get("enabled") ?? "") === "true";
+  await setSetting("sevdesk.excludeRecurring", enabled ? "true" : "false");
+  revalidatePath("/settings");
+  revalidatePath("/open-items");
 }
 
 export interface SevdeskSyncResult {
@@ -171,11 +180,15 @@ export async function syncSevdeskDocuments(): Promise<SevdeskDocsResult> {
   const token = await getSevdeskToken();
   if (!token) return { error: "Kein sevDesk-Token hinterlegt." };
 
+  // Standardmäßig wiederkehrende Beleg-Vorlagen ausschließen (per Einstellung
+  // abschaltbar) – deren Liquidität ist meist über Planposten abgedeckt.
+  const excludeRecurring = (await getSetting("sevdesk.excludeRecurring")) !== "false";
+
   let items;
   try {
     const [invoices, vouchers] = await Promise.all([
       fetchOpenInvoices(token),
-      fetchOpenVouchers(token),
+      fetchOpenVouchers(token, { excludeRecurring }),
     ]);
     items = [...invoices, ...vouchers];
   } catch (e) {

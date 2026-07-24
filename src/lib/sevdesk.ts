@@ -198,13 +198,26 @@ export async function fetchOpenInvoices(token: string): Promise<SevdeskOpenItem[
 }
 
 // Belege (Eingangsrechnungen/Ausgaben) -> offene Verbindlichkeiten (unbezahlt).
-export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[]> {
+export async function fetchOpenVouchers(
+  token: string,
+  opts?: { excludeRecurring?: boolean },
+): Promise<SevdeskOpenItem[]> {
+  const excludeRecurring = opts?.excludeRecurring ?? true;
   const objs = await sevGet(`/Voucher?limit=1000&embed=supplier`, token);
   const out: SevdeskOpenItem[] = [];
   for (const o of objs) {
     const status = Number(o.status ?? 0);
     if (status < 100) continue; // Entwürfe überspringen
     if (status >= STATUS_PAID) continue; // von sevDesk als bezahlt markiert
+    // Wiederkehrende Beleg-Vorlagen (voucherType "RV") sind keine echten
+    // Fälligkeiten – sevDesk erzeugt daraus periodisch die tatsächlichen Belege.
+    // Der Nutzer deckt diese Liquidität i.d.R. bereits über Planposten ab, daher
+    // standardmäßig ausschließen (per Einstellung abschaltbar).
+    const isRecurringTemplate =
+      String(o.voucherType ?? "").toUpperCase() === "RV" ||
+      o.recurringInterval != null ||
+      o.recurringNextVoucher != null;
+    if (excludeRecurring && isRecurringTemplate) continue;
     const amount = toNumberOrNull(o.sumGross ?? o.sumgross);
     if (amount == null || amount === 0) continue;
     const grossCents = Math.round(Math.abs(amount) * 100);

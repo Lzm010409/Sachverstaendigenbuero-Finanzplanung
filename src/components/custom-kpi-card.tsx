@@ -60,23 +60,41 @@ export function CustomKpiCard({
       </div>
 
       {result.kind === "number" ? (
-        <div className="mt-2">
-          <div
-            className={`font-bold text-slate-900 ${VALUE_TEXT[result.size]}`}
-            title={`${result.metricLabel} (${result.rangeLabel}): ${fmt(result.value, result.unit)}`}
-          >
+        <div className="group relative mt-2 inline-block">
+          <div className={`cursor-help font-bold text-slate-900 ${VALUE_TEXT[result.size]}`}>
             {fmt(result.value, result.unit)}
           </div>
           {result.delta != null && (
-            <div
-              className={`mt-1 text-xs font-medium ${result.delta >= 0 ? "text-emerald-600" : "text-red-600"}`}
-              title={`Veränderung zur Vorperiode: ${result.delta >= 0 ? "+" : ""}${fmt(result.delta, result.unit)}`}
-            >
+            <div className={`mt-1 text-xs font-medium ${result.delta >= 0 ? "text-emerald-600" : "text-red-600"}`}>
               {result.delta >= 0 ? "▲" : "▼"} {result.delta >= 0 ? "+" : ""}{fmt(result.delta, result.unit)}
               {result.deltaPct != null && <span className="text-slate-400"> ({result.deltaPct >= 0 ? "+" : ""}{result.deltaPct} %)</span>}
               <span className="ml-1 text-slate-400">vs. Vorperiode</span>
             </div>
           )}
+          {/* Hover-Popover mit Detailwerten */}
+          <div className="pointer-events-none absolute left-0 top-full z-50 mt-1 hidden w-max max-w-[16rem] rounded-md border border-slate-200 bg-white p-2.5 text-xs shadow-lg group-hover:block">
+            <div className="font-semibold text-slate-700">{result.name}</div>
+            <div className="mt-0.5 text-slate-400">{result.metricLabel} · {result.rangeLabel}</div>
+            <div className="mt-1.5 flex justify-between gap-4">
+              <span className="text-slate-500">Wert</span>
+              <span className="font-semibold tabular-nums text-slate-800">{fmt(result.value, result.unit)}</span>
+            </div>
+            {result.delta != null && (
+              <>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-500">Vorperiode</span>
+                  <span className="tabular-nums text-slate-600">{fmt(result.value - result.delta, result.unit)}</span>
+                </div>
+                <div className="flex justify-between gap-4">
+                  <span className="text-slate-500">Veränderung</span>
+                  <span className={`tabular-nums font-medium ${result.delta >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    {result.delta >= 0 ? "+" : ""}{fmt(result.delta, result.unit)}
+                    {result.deltaPct != null && ` (${result.deltaPct >= 0 ? "+" : ""}${result.deltaPct} %)`}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       ) : (
         <div className="mt-2" style={{ height: CHART_H[result.size] }}>

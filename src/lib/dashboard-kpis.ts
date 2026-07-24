@@ -1,5 +1,5 @@
 import { prisma } from "./db";
-import { getKpis } from "./analytics";
+import { getKpis, getAnnualBudgetUtilization } from "./analytics";
 import { getReceivablesReport } from "./receivables";
 import { getWeeklyForecast, getPlanningSettings } from "./planning";
 import { getForecast, INCLUDED_ACCOUNT } from "./queries";
@@ -23,7 +23,7 @@ export interface KpiDescriptor {
 
 // Standardmäßig sichtbare KPIs (Reihenfolge = Anzeige). Der Rest ist über den
 // „KPIs anpassen"-Schalter zuschaltbar.
-export const DEFAULT_KPI_IDS = ["balance", "income3m", "expense3m", "runway", "workingCapital"];
+export const DEFAULT_KPI_IDS = ["balance", "income3m", "expense3m", "runway", "workingCapital", "budgetIncome", "budgetExpense"];
 
 const pct = (x: number) => `${Math.round(x * 100)} %`;
 const days = (n: number | null) => (n == null ? "–" : `${n} Tage`);
@@ -36,7 +36,7 @@ export async function getDashboardKpis(): Promise<KpiDescriptor[]> {
   const prevStart = addMonths(curStart, -1);
   const in30 = addDays(today, 30);
 
-  const [kpis, rec, weekly, fc30, fc90, planning, conc, vat, transferIds, monthTx, payables] = await Promise.all([
+  const [kpis, rec, weekly, fc30, fc90, planning, conc, vat, transferIds, monthTx, payables, budgetUtil] = await Promise.all([
     getKpis(),
     getReceivablesReport(),
     getWeeklyForecast(13),
@@ -54,6 +54,7 @@ export async function getDashboardKpis(): Promise<KpiDescriptor[]> {
       where: { paid: false, kind: "PAYABLE", dueDate: { gte: today, lt: in30 } },
       select: { amount: true, paidAmount: true },
     }),
+    getAnnualBudgetUtilization(),
   ]);
 
   // Monats-Ist (laufend + Vormonat), Transfers ausgeklammert.
@@ -115,6 +116,24 @@ export async function getDashboardKpis(): Promise<KpiDescriptor[]> {
     // --- Steuer & Risiko ---
     { id: "vatNext", label: "USt-Zahllast (nächste)", value: nextVat ? formatCents(nextVat.vatPayable) : "–", tone: nextVat && nextVat.vatPayable > 0 ? "warning" : "default", hint: nextVat ? `fällig ${nextVat.dueDate.toLocaleDateString("de-DE")}` : undefined, href: "/tax" },
     { id: "topDebtor", label: "Klumpenrisiko (Top-1)", value: conc.debtors.length ? pct(conc.top1Share) : "–", tone: conc.top1Share > 0.4 ? "warning" : "default", hint: "Anteil größter Debitor", href: "/concentration" },
+
+    // --- Budget (Ist/Soll Jahr) ---
+    {
+      id: "budgetIncome",
+      label: "Budget Einnahmen (Ist/Soll)",
+      value: budgetUtil.income.pct == null ? "–" : pct(budgetUtil.income.pct),
+      tone: "default",
+      hint: budgetUtil.income.budget > 0 ? `${formatCents(budgetUtil.income.actual)} / ${formatCents(budgetUtil.income.budget)}` : "kein Budget",
+      href: "/breakdown",
+    },
+    {
+      id: "budgetExpense",
+      label: "Budget Ausgaben (Ist/Soll)",
+      value: budgetUtil.expense.pct == null ? "–" : pct(budgetUtil.expense.pct),
+      tone: budgetUtil.expense.pct != null && budgetUtil.expense.pct > 1 ? "negative" : "default",
+      hint: budgetUtil.expense.budget > 0 ? `${formatCents(-budgetUtil.expense.actual)} / ${formatCents(-budgetUtil.expense.budget)}` : "kein Budget",
+      href: "/breakdown",
+    },
   ];
 
   for (const k of list) k.group = KPI_GROUP[k.id] ?? "Weitere";
@@ -132,12 +151,14 @@ export const KPI_GROUP: Record<string, string> = {
   payables30: "Forderungen & Verbindlichkeiten", coverage: "Forderungen & Verbindlichkeiten",
   forecast30: "Prognose", forecast90: "Prognose", lowPoint13w: "Prognose", minBuffer: "Prognose",
   vatNext: "Steuer & Risiko", topDebtor: "Steuer & Risiko",
+  budgetIncome: "Budget (Ist/Soll)", budgetExpense: "Budget (Ist/Soll)",
 };
 
 // Reihenfolge der Gruppen für die Anzeige.
 export const KPI_GROUP_ORDER = [
   "Bestand & Basis",
   "Monat (laufend)",
+  "Budget (Ist/Soll)",
   "Forderungen & Verbindlichkeiten",
   "Prognose",
   "Steuer & Risiko",

@@ -175,6 +175,53 @@ export async function getCategoryBreakdown(
   };
 }
 
+export interface BudgetUtil {
+  actual: number; // Ist laufendes Kalenderjahr (Magnitude, Cent)
+  budget: number; // Summe Jahresbudget (Cent)
+  pct: number | null; // actual/budget, null ohne Budget
+}
+
+/**
+ * Kumulierte Jahres-Budgetauslastung getrennt nach Einnahmen und Ausgaben –
+ * dieselbe Semantik wie die Summenzeile/das Ist-Soll-Feld der Auswertung
+ * (nur Kategorien mit hinterlegtem Budget, Transfers neutral). Für KPIs.
+ */
+export async function getAnnualBudgetUtilization(): Promise<{ income: BudgetUtil; expense: BudgetUtil }> {
+  const ref = todayUTC();
+  const yearStart = new Date(Date.UTC(ref.getUTCFullYear(), 0, 1));
+  const yearEnd = new Date(Date.UTC(ref.getUTCFullYear() + 1, 0, 1));
+  const [categories, yearTxs, budgetByCat, transferIds] = await Promise.all([
+    prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, kind: true } }),
+    prisma.transaction.findMany({
+      where: { bookingDate: { gte: yearStart, lt: yearEnd }, account: INCLUDED_ACCOUNT },
+      select: { categoryId: true, amount: true },
+    }),
+    getBudgetAnnualByCategory(ref),
+    getTransferCategoryIds(),
+  ]);
+  const kindOf = new Map(categories.map((c) => [c.id, c.kind]));
+  const yearByCat = new Map<string, number>();
+  for (const t of yearTxs) {
+    if (!t.categoryId || transferIds.has(t.categoryId)) continue;
+    yearByCat.set(t.categoryId, (yearByCat.get(t.categoryId) ?? 0) + t.amount);
+  }
+  const acc = { income: { actual: 0, budget: 0 }, expense: { actual: 0, budget: 0 } };
+  for (const [catId, budget] of budgetByCat) {
+    if (!(budget > 0)) continue;
+    const kind = kindOf.get(catId);
+    if (kind !== "INCOME" && kind !== "EXPENSE") continue;
+    const bucket = kind === "INCOME" ? acc.income : acc.expense;
+    bucket.budget += budget;
+    bucket.actual += Math.abs(yearByCat.get(catId) ?? 0);
+  }
+  const util = (a: { actual: number; budget: number }): BudgetUtil => ({
+    actual: a.actual,
+    budget: a.budget,
+    pct: a.budget > 0 ? a.actual / a.budget : null,
+  });
+  return { income: util(acc.income), expense: util(acc.expense) };
+}
+
 export interface CashflowMonth {
   key: string;
   label: string;

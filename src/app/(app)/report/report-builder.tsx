@@ -25,6 +25,7 @@ export interface ReportData {
 const GROUP_ORDER = [
   "Bestand & Basis",
   "Monat (laufend)",
+  "Budget (Ist/Soll)",
   "Forderungen & Verbindlichkeiten",
   "Prognose",
   "Steuer & Risiko",
@@ -53,7 +54,7 @@ const PRESETS: Record<string, Preset> = {
   full: {
     name: "Komplettbericht",
     subtitle: "Alle Kennzahlen und Auswertungen",
-    kpis: ["balance", "income3m", "expense3m", "netMonthly", "runway", "workingCapital", "openReceivables", "overdueReceivables", "dso", "openPayables", "forecast30", "forecast90", "lowPoint13w", "minBuffer", "vatNext", "topDebtor"],
+    kpis: ["balance", "income3m", "expense3m", "netMonthly", "runway", "workingCapital", "budgetIncome", "budgetExpense", "openReceivables", "overdueReceivables", "dso", "openPayables", "forecast30", "forecast90", "lowPoint13w", "minBuffer", "vatNext", "topDebtor"],
     sections: ["cashflow", "weekly", "receivables", "vat", "concentration"],
   },
   liquidity: {

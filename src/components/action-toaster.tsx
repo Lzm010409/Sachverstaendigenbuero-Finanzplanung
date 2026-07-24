@@ -163,13 +163,13 @@ export function ActionToaster() {
         </div>
       )}
       {toasts.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-[100] flex flex-col items-end gap-2">
+        <div className="fixed right-4 top-4 z-[100] flex flex-col items-end gap-2.5">
           {toasts.map((t) => (
             <div
               key={t.id}
               role="status"
               aria-live="polite"
-              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium shadow-lg transition ${
+              className={`flex items-center gap-2.5 rounded-full border px-5 py-3 text-sm font-medium shadow-lg transition ${
                 t.kind === "pending"
                   ? "border-slate-200 bg-white text-slate-600"
                   : t.kind === "error"
@@ -178,9 +178,9 @@ export function ActionToaster() {
               }`}
             >
               {t.kind === "pending" ? (
-                <span className="jd-spinner h-3.5 w-3.5" />
+                <span className="jd-spinner h-4 w-4" />
               ) : (
-                <span aria-hidden>{t.kind === "error" ? "⛔" : "✓"}</span>
+                <span aria-hidden className="text-base leading-none">{t.kind === "error" ? "⛔" : "✓"}</span>
               )}
               {t.msg}
             </div>

@@ -8,16 +8,19 @@ export interface PlanningSettings {
   minLiquidityCents: number;
   vatRatePercent: number;
   vatCycle: "monthly" | "quarterly";
+  vatBasis: "soll" | "ist"; // Soll- (nach Rechnungsdatum) oder Ist-Versteuerung (nach Zahldatum)
   notifyEmail: string | null;
 }
 
 export async function getPlanningSettings(): Promise<PlanningSettings> {
-  const s = await getSettings(["liquidity.minThreshold", "tax.vatRate", "tax.vatCycle", "notify.email"]);
+  const s = await getSettings(["liquidity.minThreshold", "tax.vatRate", "tax.vatCycle", "tax.vatBasis", "notify.email"]);
   return {
     minLiquidityCents: Number(s["liquidity.minThreshold"] ?? 0) || 0,
     vatRatePercent: s["tax.vatRate"] != null ? Number(s["tax.vatRate"]) : 19,
     // Standard: monatliche USt-Voranmeldung.
     vatCycle: s["tax.vatCycle"] === "quarterly" ? "quarterly" : "monthly",
+    // Standard: Soll-Versteuerung (nach Rechnungs-/Belegdatum).
+    vatBasis: s["tax.vatBasis"] === "ist" ? "ist" : "soll",
     notifyEmail: s["notify.email"] || null,
   };
 }

@@ -29,10 +29,11 @@ const monthKey = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 
 export const getVatForecast = cache(async (periodsBack = 2, periodsForward = 2): Promise<{
   ratePercent: number;
   cycle: "monthly" | "quarterly";
+  basis: "soll" | "ist";
   source: "sevdesk" | "geschätzt";
   periods: VatPeriod[];
 }> => {
-  const { vatRatePercent, vatCycle } = await getPlanningSettings();
+  const { vatRatePercent, vatCycle, vatBasis } = await getPlanningSettings();
   const today = todayUTC();
   const stepMonths = vatCycle === "monthly" ? 1 : 3;
   const curMonth = today.getUTCMonth();
@@ -44,7 +45,7 @@ export const getVatForecast = cache(async (periodsBack = 2, periodsForward = 2):
   let vat: Awaited<ReturnType<typeof fetchVatEntries>> | null = null;
   if (token) {
     try {
-      vat = await fetchVatEntries(token);
+      vat = await fetchVatEntries(token, vatBasis);
     } catch {
       vat = null;
     }
@@ -103,5 +104,5 @@ export const getVatForecast = cache(async (periodsBack = 2, periodsForward = 2):
       paid: dueDate < today,
     });
   }
-  return { ratePercent: vatRatePercent, cycle: vatCycle, source: vat ? "sevdesk" : "geschätzt", periods };
+  return { ratePercent: vatRatePercent, cycle: vatCycle, basis: vatBasis, source: vat ? "sevdesk" : "geschätzt", periods };
 });

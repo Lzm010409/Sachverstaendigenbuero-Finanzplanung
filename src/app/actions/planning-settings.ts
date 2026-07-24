@@ -22,6 +22,10 @@ export async function savePlanningSettings(formData: FormData): Promise<void> {
     const v = String(formData.get("vatPrepayCycle") ?? "");
     if (["monthly", "quarterly"].includes(v)) entries["tax.vatCycle"] = v;
   }
+  if (formData.has("vatBasis")) {
+    const v = String(formData.get("vatBasis") ?? "");
+    if (["soll", "ist"].includes(v)) entries["tax.vatBasis"] = v;
+  }
   if (formData.has("notifyEmail")) {
     entries["notify.email"] = String(formData.get("notifyEmail") ?? "").trim();
   }

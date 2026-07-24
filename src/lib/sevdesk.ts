@@ -335,8 +335,12 @@ function ym(dateStr: unknown): string | null {
  * USt-/Vorsteuer-Beträge aus sevDesk – ausschließlich Belege/Rechnungen in EUR
  * mit ausgewiesener Steuer (sumTax > 0). Rechnungen = USt (Ausgang), Belege mit
  * creditDebit "C" (Ausgabe) = Vorsteuer (Eingang), "D" (Einnahme) = USt.
+ *
+ * basis „soll": Zuordnung nach Rechnungs-/Belegdatum (Sollversteuerung).
+ * basis „ist": Zuordnung nach Zahldatum (payDate); noch nicht bezahlte
+ * Dokumente entstehen erst mit der Zahlung und werden bis dahin ausgelassen.
  */
-export async function fetchVatEntries(token: string): Promise<VatEntries> {
+export async function fetchVatEntries(token: string, basis: "soll" | "ist" = "soll"): Promise<VatEntries> {
   const [invoices, vouchers] = await Promise.all([
     sevGet(`/Invoice?limit=1000`, token),
     sevGet(`/Voucher?limit=1000`, token),
@@ -346,6 +350,7 @@ export async function fetchVatEntries(token: string): Promise<VatEntries> {
   const add = (bucket: Record<string, number>, key: string, cents: number) => {
     bucket[key] = (bucket[key] ?? 0) + cents;
   };
+  const isIst = basis === "ist";
 
   let invoiceCount = 0;
   for (const o of invoices) {
@@ -353,8 +358,8 @@ export async function fetchVatEntries(token: string): Promise<VatEntries> {
     if (Number(o.status ?? 0) < 200) continue; // keine Entwürfe
     const tax = toNumberOrNull(o.sumTax);
     if (tax == null || tax <= 0) continue; // nur mit MwSt > 0
-    const key = ym(o.invoiceDate) ?? ym(o.deliveryDate);
-    if (!key) continue;
+    const key = isIst ? ym(o.payDate) : (ym(o.invoiceDate) ?? ym(o.deliveryDate));
+    if (!key) continue; // Ist: unbezahlt -> (noch) keine USt
     add(outputByMonth, key, Math.round(tax * 100));
     invoiceCount++;
   }
@@ -365,8 +370,8 @@ export async function fetchVatEntries(token: string): Promise<VatEntries> {
     if (Number(o.status ?? 0) < 100) continue; // keine Entwürfe
     const tax = toNumberOrNull(o.sumTax);
     if (tax == null || tax <= 0) continue;
-    const key = ym(o.voucherDate);
-    if (!key) continue;
+    const key = isIst ? ym(o.payDate) : ym(o.voucherDate);
+    if (!key) continue; // Ist: unbezahlt -> (noch) keine Vorsteuer
     const isRevenue = String(o.creditDebit ?? "C").toUpperCase() === "D";
     add(isRevenue ? outputByMonth : inputByMonth, key, Math.round(tax * 100));
     voucherCount++;

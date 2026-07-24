@@ -135,6 +135,14 @@ export default async function SettingsPage() {
             </select>
           </div>
           <div>
+            <label className="label">Besteuerungsart</label>
+            <select name="vatBasis" defaultValue={plan.vatBasis} className="input">
+              <option value="soll">Sollversteuerung (nach Rechnungsdatum)</option>
+              <option value="ist">Istversteuerung (nach Zahldatum)</option>
+            </select>
+            <p className="mt-1 text-xs text-slate-400">Ist = USt entsteht erst bei Zahlung.</p>
+          </div>
+          <div>
             <label className="label">Digest-E-Mail</label>
             <input name="notifyEmail" defaultValue={plan.notifyEmail ?? ""} className="input" type="email" placeholder="name@firma.de" />
           </div>

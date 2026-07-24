@@ -7,7 +7,8 @@ import { PageAlerts } from "@/components/page-alerts";
 export const dynamic = "force-dynamic";
 
 export default async function TaxPage() {
-  const { ratePercent, cycle, source, periods } = await getVatForecast(3, 3);
+  const { ratePercent, cycle, basis, source, periods } = await getVatForecast(3, 3);
+  const basisLabel = basis === "ist" ? "Istversteuerung (nach Zahldatum)" : "Sollversteuerung (nach Rechnungsdatum)";
   const today = todayUTC();
   const upcoming = periods.filter((p) => p.dueDate >= today && p.vatPayable > 0);
   const nextDue = upcoming[0];
@@ -23,7 +24,8 @@ export default async function TaxPage() {
           ) : (
             <span className="text-amber-600">geschätzt aus Umsätzen ({String(ratePercent).replace(".", ",")} %)</span>
           )}{" "}
-          · Zyklus unter <Link href="/settings" className="text-brand underline">Einstellungen</Link>.
+          · <span className="font-medium text-slate-600">{basisLabel}</span>
+          {" "}· Zyklus/Besteuerungsart unter <Link href="/settings" className="text-brand underline">Einstellungen</Link>.
         </p>
       </div>
 
@@ -77,8 +79,8 @@ export default async function TaxPage() {
       </div>
       <p className="text-xs text-slate-400">
         {source === "sevdesk"
-          ? "Basis: tatsächliche Steuerbeträge (sumTax) der Rechnungen (USt) und Belege (Vorsteuer) aus sevDesk, ausschließlich in EUR und mit MwSt > 0, nach Beleg-/Rechnungsdatum. Soll-Versteuerung; §13b und Sonderfälle unberücksichtigt — als Orientierung, nicht als Steuererklärung."
-          : "Kein sevDesk-Token: vereinfachte Schätzung aus den gebuchten Umsätzen (Brutto → Netto bei einheitlichem Satz)."}
+          ? `Basis: tatsächliche Steuerbeträge (sumTax) der Rechnungen (USt) und Belege (Vorsteuer) aus sevDesk, ausschließlich in EUR und mit MwSt > 0. ${basis === "ist" ? "Istversteuerung: Zuordnung nach Zahldatum (payDate); unbezahlte Dokumente zählen noch nicht." : "Sollversteuerung: Zuordnung nach Beleg-/Rechnungsdatum."} §13b und Sonderfälle unberücksichtigt — als Orientierung, nicht als Steuererklärung.`
+          : "Kein sevDesk-Token: vereinfachte Schätzung aus den gebuchten Umsätzen (Brutto → Netto bei einheitlichem Satz). Diese Schätzung ist bereits zahlungsbasiert (Ist-nah)."}
       </p>
     </div>
   );

@@ -125,7 +125,7 @@ export default async function OpenItemsPage({
             abgedeckt. {excludeRecurring ? "Aktuell werden sie beim Import übersprungen." : "Aktuell werden sie mit importiert."}
           </p>
         </div>
-        <form action={setExcludeRecurringVouchers}>
+        <form action={setExcludeRecurringVouchers} data-toast="Einstellung gespeichert">
           <input type="hidden" name="enabled" value={excludeRecurring ? "false" : "true"} />
           <button className={excludeRecurring ? "btn-secondary" : "btn-primary"}>
             {excludeRecurring ? "Wieder importieren" : "Ausschließen aktivieren"}
@@ -229,7 +229,7 @@ export default async function OpenItemsPage({
                           <span className={`badge ${status.cls}`}>{status.label}</span>
                         </td>
                         <td className="td">
-                          <form action={setOpenItemPayment} className="flex items-center gap-1">
+                          <form action={setOpenItemPayment} data-toast="Teilzahlung gespeichert" className="flex items-center gap-1">
                             <input type="hidden" name="id" value={i.id} />
                             <input
                               name="paidAmount"
@@ -245,13 +245,13 @@ export default async function OpenItemsPage({
                         </td>
                         <td className="td">
                           <div className="flex justify-end gap-3">
-                            <form action={toggleOpenItemPaid}>
+                            <form action={toggleOpenItemPaid} data-toast="Status geändert">
                               <input type="hidden" name="id" value={i.id} />
                               <button className="text-xs text-slate-400 hover:text-brand">
                                 {i.paid ? "offen setzen" : "voll bezahlt"}
                               </button>
                             </form>
-                            <form action={deleteOpenItem}>
+                            <form action={deleteOpenItem} data-toast="Posten gelöscht">
                               <input type="hidden" name="id" value={i.id} />
                               <button className="text-xs text-slate-400 hover:text-red-600">löschen</button>
                             </form>
@@ -306,7 +306,7 @@ export default async function OpenItemsPage({
                       {new Date(ig.createdAt).toLocaleDateString("de-DE")}
                     </td>
                     <td className="td text-right">
-                      <form action={reactivateIgnoredSevItem}>
+                      <form action={reactivateIgnoredSevItem} data-toast="Wieder aktiviert">
                         <input type="hidden" name="id" value={ig.id} />
                         <button className="text-xs text-brand hover:underline">wieder aktivieren</button>
                       </form>

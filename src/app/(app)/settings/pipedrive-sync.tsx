@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { syncPipedrive, type PipedriveSyncResult } from "@/app/actions/settings";
+import { notify } from "@/components/action-toaster";
 
 export function PipedriveSync() {
   const [pending, start] = useTransition();
@@ -12,11 +13,14 @@ export function PipedriveSync() {
       <button
         className="btn-primary"
         disabled={pending}
-        onClick={() =>
+        onClick={() => {
+          notify("Kontakte werden synchronisiert…");
           start(async () => {
-            setResult(await syncPipedrive());
-          })
-        }
+            const r = await syncPipedrive();
+            setResult(r);
+            notify(r.error ? r.error : `${r.total ?? 0} Kontakte synchronisiert`, r.error ? "error" : "success");
+          });
+        }}
       >
         {pending ? "Synchronisiere…" : "Kontakte synchronisieren"}
       </button>

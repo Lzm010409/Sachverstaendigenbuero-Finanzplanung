@@ -11,7 +11,7 @@ export function ImportForm({ accounts }: { accounts: { id: string; name: string 
 
   return (
     <div className="space-y-4">
-      <form action={action} className="grid gap-3 sm:grid-cols-2">
+      <form action={action} data-no-toast className="grid gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Konto</label>
           <select name="accountId" className="input" required defaultValue="">

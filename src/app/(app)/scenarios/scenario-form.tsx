@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { createScenario } from "@/app/actions/scenarios";
+import { useActionToast } from "@/components/action-toaster";
 
 export function ScenarioForm() {
   const ref = useRef<HTMLFormElement>(null);
@@ -12,9 +13,10 @@ export function ScenarioForm() {
   useEffect(() => {
     if (state?.ok) ref.current?.reset();
   }, [state]);
+  useActionToast(state, "Szenario gespeichert");
 
   return (
-    <form ref={ref} action={action} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <form ref={ref} action={action} data-no-toast className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <div className="lg:col-span-1">
         <label className="label">Name</label>
         <input name="name" className="input" placeholder="z.B. Worst Case" required />

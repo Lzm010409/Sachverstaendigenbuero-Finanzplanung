@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { createPlannedItem } from "@/app/actions/planning";
 import { CategoryOptions, type CatOpt } from "@/components/category-select";
+import { useActionToast } from "@/components/action-toaster";
 
 export function PlannedForm({ categories }: { categories: CatOpt[] }) {
   const ref = useRef<HTMLFormElement>(null);
@@ -18,9 +19,10 @@ export function PlannedForm({ categories }: { categories: CatOpt[] }) {
       setRec("MONTHLY");
     }
   }, [state]);
+  useActionToast(state, "Planposten angelegt");
 
   return (
-    <form ref={ref} action={action} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <form ref={ref} action={action} data-no-toast className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <label className="label">Bezeichnung</label>
         <input name="name" className="input" placeholder="z.B. Büromiete, Gehalt, Steuer-VZ" required />

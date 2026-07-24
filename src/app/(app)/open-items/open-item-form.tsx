@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef } from "react";
 import { createOpenItem } from "@/app/actions/openitems";
 import { CategoryOptions, type CatOpt } from "@/components/category-select";
+import { useActionToast } from "@/components/action-toaster";
 
 export function OpenItemForm({ categories }: { categories: CatOpt[] }) {
   const ref = useRef<HTMLFormElement>(null);
@@ -13,9 +14,10 @@ export function OpenItemForm({ categories }: { categories: CatOpt[] }) {
   useEffect(() => {
     if (state?.ok) ref.current?.reset();
   }, [state]);
+  useActionToast(state, "Posten hinzugefügt");
 
   return (
-    <form ref={ref} action={action} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <form ref={ref} action={action} data-no-toast className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <div>
         <label className="label">Art</label>
         <select name="kind" className="input" defaultValue="RECEIVABLE">

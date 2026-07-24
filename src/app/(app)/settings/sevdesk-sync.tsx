@@ -7,6 +7,7 @@ import {
   type SevdeskDocsResult,
   type SevdeskSyncResult,
 } from "@/app/actions/settings";
+import { notify } from "@/components/action-toaster";
 
 export function SevdeskSync() {
   const [pending, start] = useTransition();
@@ -19,14 +20,28 @@ export function SevdeskSync() {
         <button
           className="btn-primary"
           disabled={pending}
-          onClick={() => start(async () => setTxResult(await syncSevdesk()))}
+          onClick={() => {
+            notify("Umsätze werden synchronisiert…");
+            start(async () => {
+              const r = await syncSevdesk();
+              setTxResult(r);
+              notify(r.error ? r.error : `${r.imported ?? 0} neue Umsätze synchronisiert`, r.error ? "error" : "success");
+            });
+          }}
         >
           {pending ? "…" : "Umsätze synchronisieren"}
         </button>
         <button
           className="btn-secondary"
           disabled={pending}
-          onClick={() => start(async () => setDocResult(await syncSevdeskDocuments()))}
+          onClick={() => {
+            notify("Rechnungen & Belege werden synchronisiert…");
+            start(async () => {
+              const r = await syncSevdeskDocuments();
+              setDocResult(r);
+              notify(r.error ? r.error : "Rechnungen & Belege synchronisiert", r.error ? "error" : "success");
+            });
+          }}
         >
           {pending ? "…" : "Rechnungen & Belege synchronisieren"}
         </button>

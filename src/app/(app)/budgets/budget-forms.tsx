@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createBudget, updateBudget } from "@/app/actions/budgets";
 import { BUDGET_PERIODS } from "@/lib/budget";
 import type { CatOption } from "../categories/category-forms";
+import { useActionToast } from "@/components/action-toaster";
 
 export interface BudgetView {
   id: string;
@@ -54,9 +55,10 @@ export function BudgetForm({ categories }: { categories: CatOption[] }) {
       router.refresh();
     }
   }, [state, router]);
+  useActionToast(state, "Budget angelegt");
 
   return (
-    <form ref={ref} action={action} className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <form ref={ref} action={action} data-no-toast className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <div className="sm:col-span-2">
         <label className="label">Titel</label>
         <input name="title" className="input" placeholder="z.B. Rücklage Steuer, Marketing" required />
@@ -122,6 +124,7 @@ export function BudgetRow({ budget, categories }: { budget: BudgetView; categori
       router.refresh();
     }
   }, [state, router]);
+  useActionToast(state, "Budget gespeichert");
 
   const amountStr = (budget.amount / 100).toFixed(2).replace(".", ",");
 
@@ -136,7 +139,7 @@ export function BudgetRow({ budget, categories }: { budget: BudgetView; categori
   }
 
   return (
-    <form action={action} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+    <form action={action} data-no-toast className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
       <input type="hidden" name="id" value={budget.id} />
       <div className="sm:col-span-2">
         <label className="label">Titel</label>

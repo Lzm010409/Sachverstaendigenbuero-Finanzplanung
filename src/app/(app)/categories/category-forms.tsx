@@ -9,6 +9,7 @@ import {
   resetAllTransactionCategories,
 } from "@/app/actions/categories";
 import { RuleBuilder, type AccountOpt } from "./rule-builder";
+import { useActionToast } from "@/components/action-toaster";
 
 export function CategoryForm() {
   const ref = useRef<HTMLFormElement>(null);
@@ -19,9 +20,10 @@ export function CategoryForm() {
   useEffect(() => {
     if (state?.ok) ref.current?.reset();
   }, [state]);
+  useActionToast(state, "Kategorie angelegt");
 
   return (
-    <form ref={ref} action={action} className="flex flex-wrap items-end gap-3">
+    <form ref={ref} action={action} data-no-toast className="flex flex-wrap items-end gap-3">
       <div className="min-w-[180px] flex-1">
         <label className="label">Name</label>
         <input name="name" className="input" placeholder="z.B. Miete, Honorare" required />
@@ -104,9 +106,10 @@ export function RuleForm({ categories, accounts }: { categories: CatOption[]; ac
   useEffect(() => {
     if (state?.ok) setFormKey((k) => k + 1);
   }, [state]);
+  useActionToast(state, "Regel gespeichert");
 
   return (
-    <form key={formKey} action={action} className="space-y-3">
+    <form key={formKey} action={action} data-no-toast className="space-y-3">
       <div>
         <label className="label">Bedingung (beliebig verschachtelbar mit UND / ODER / NICHT)</label>
         <RuleBuilder name="conditions" accounts={accounts} />

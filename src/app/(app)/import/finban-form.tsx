@@ -11,7 +11,7 @@ export function FinbanForm() {
 
   return (
     <div className="space-y-4">
-      <form action={action} className="space-y-3">
+      <form action={action} data-no-toast className="space-y-3">
         <div>
           <label className="label">finban-Export (CSV)</label>
           <input

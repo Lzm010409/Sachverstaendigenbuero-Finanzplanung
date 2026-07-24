@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CategoryOptions, type CatOpt } from "@/components/category-select";
 import { SortableTh } from "@/components/sortable-th";
+import { notify } from "@/components/action-toaster";
 
 // Persistiert über die API-Route (fetch), damit KEINE Server-Action-Revalidierung
 // die schwere Umsätze-Route bei jedem Klick neu rendert (verhindert 503 bei
@@ -125,7 +126,8 @@ export function TransactionsTable({
     }
     setSelected(new Set());
     void persist({ op: "categorize", ids, categoryId: cat }).then((ok) => {
-      if (!ok) onError();
+      if (ok) notify(`${ids.length} Umsätze zugeordnet`);
+      else { notify("Speichern fehlgeschlagen", "error"); onError(); }
     });
   };
 
@@ -134,14 +136,16 @@ export function TransactionsTable({
     setOverride((prev) => new Map(prev).set(id, val));
     if (!matchesFilter(val)) setHidden((prev) => new Set(prev).add(id));
     void persist({ op: "categorize", ids: [id], categoryId: val }).then((ok) => {
-      if (!ok) onError();
+      if (ok) notify("Kategorie geändert");
+      else { notify("Speichern fehlgeschlagen", "error"); onError(); }
     });
   };
 
   const remove = (id: string) => {
     setDeleted((prev) => new Set(prev).add(id));
     void persist({ op: "delete", id }).then((ok) => {
-      if (!ok) onError();
+      if (ok) notify("Umsatz gelöscht");
+      else { notify("Löschen fehlgeschlagen", "error"); onError(); }
     });
   };
 

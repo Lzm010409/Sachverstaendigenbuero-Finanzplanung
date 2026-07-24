@@ -26,6 +26,15 @@ function Section({
   divisor: number;
 }) {
   if (rows.length === 0) return null;
+  const isIncomeSection = rows[0].kind === "INCOME";
+  // Kumulierte Werte der Sektion: Spaltensummen (Ist je Zeitraum) sowie
+  // Jahres-Ist/-Budget (nur Kategorien mit Budget) für den Ist/Soll-Vergleich.
+  const periodSums = periods.map((_, i) => rows.reduce((s, r) => s + (r.values[i] ?? 0), 0));
+  const budgeted = rows.filter((r) => r.annualBudget > 0);
+  const sumBudget = budgeted.reduce((s, r) => s + r.annualBudget, 0);
+  const sumActual = budgeted.reduce((s, r) => s + r.yearActual, 0);
+  const sumPct = sumBudget > 0 ? Math.round((sumActual / sumBudget) * 100) : null;
+  const sumBg = budgetCellColor(sumActual, sumBudget, isIncomeSection);
   return (
     <>
       <tr className="bg-slate-50">
@@ -83,6 +92,25 @@ function Section({
           </tr>
         );
       })}
+      {/* Kumulierte Summenzeile der Sektion (Ist je Zeitraum + Ist/Soll Jahr). */}
+      <tr className="border-y-2 border-slate-200 bg-slate-100 font-semibold text-slate-800">
+        <td className="td sticky left-0 z-10 bg-slate-100">Summe {title}</td>
+        {periodSums.map((v, i) => (
+          <td key={periods[i].key} className="td whitespace-nowrap text-right tabular-nums">
+            {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
+          </td>
+        ))}
+        <td className="td whitespace-nowrap text-right tabular-nums">
+          {sumBudget > 0 ? formatCents(isIncomeSection ? sumBudget : -sumBudget) : "–"}
+        </td>
+        <td
+          className="td whitespace-nowrap text-right"
+          style={sumBg ? { backgroundColor: sumBg } : undefined}
+          title={sumBudget > 0 ? `Ist ${formatCents(isIncomeSection ? sumActual : -sumActual)} / Soll ${formatCents(isIncomeSection ? sumBudget : -sumBudget)}` : undefined}
+        >
+          {sumPct != null ? `${sumPct} %` : "–"}
+        </td>
+      </tr>
     </>
   );
 }
@@ -172,27 +200,39 @@ export default async function BreakdownPage({
       <p className="text-xs text-slate-400">
         Die Zellfarbe zeigt den Budgetverbrauch je Zeitraum (grün = im Rahmen, rot = überzogen; bei
         Einnahmen umgekehrt). Budgets pflegst du unter <strong>Kategorien</strong>. Die Spalte „% Jahr"
-        zeigt den Verbrauch des laufenden Kalenderjahres am Jahresbudget.
+        zeigt den Verbrauch des laufenden Kalenderjahres am Jahresbudget. Die Zeile
+        <strong> „Summe Einnahmen/Ausgaben"</strong> kumuliert je Zeitraum (Ist) sowie das gesamte
+        Jahresbudget (Soll) und dessen Auslastung. Das Feld unten rechts zeigt den Jahres-Ist/Soll-Vergleich.
       </p>
 
       {hasRows && (incPct != null || expPct != null) && (
-        <div className="fixed bottom-4 right-4 z-40 rounded-lg border border-slate-200 bg-white/95 px-4 py-2 text-sm shadow-lg backdrop-blur">
-          <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-            Budgetauslastung (Jahr)
+        <div className="fixed bottom-4 right-4 z-40 rounded-lg border border-slate-200 bg-white/95 px-4 py-2.5 text-sm shadow-lg backdrop-blur">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            Budget Ist / Soll (Jahr)
           </div>
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1.5 text-slate-600">
-              <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
-              Einnahmen
-              <strong className="tabular-nums text-emerald-700">{incPct != null ? `${incPct} %` : "–"}</strong>
-            </span>
-            <span className="flex items-center gap-1.5 text-slate-600">
-              <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
-              Ausgaben
-              <strong className={`tabular-nums ${expPct != null && expPct > 100 ? "text-red-600" : "text-slate-800"}`}>
-                {expPct != null ? `${expPct} %` : "–"}
-              </strong>
-            </span>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between gap-4">
+              <span className="flex items-center gap-1.5 text-slate-600">
+                <span className="inline-block h-2 w-2 rounded-full bg-emerald-500" />
+                Einnahmen
+              </span>
+              <span className="tabular-nums text-slate-600">
+                {formatCents(incActual)} / {formatCents(incBudget)}
+                <strong className="ml-2 text-emerald-700">{incPct != null ? `${incPct} %` : "–"}</strong>
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="flex items-center gap-1.5 text-slate-600">
+                <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
+                Ausgaben
+              </span>
+              <span className="tabular-nums text-slate-600">
+                {formatCents(-expActual)} / {formatCents(-expBudget)}
+                <strong className={`ml-2 ${expPct != null && expPct > 100 ? "text-red-600" : "text-slate-800"}`}>
+                  {expPct != null ? `${expPct} %` : "–"}
+                </strong>
+              </span>
+            </div>
           </div>
         </div>
       )}

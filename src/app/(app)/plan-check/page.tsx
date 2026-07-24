@@ -9,7 +9,7 @@ type Tab = "category" | "payees";
 export default async function PlanCheckPage({
   searchParams,
 }: {
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{ tab?: string; sort?: string; dir?: string }>;
 }) {
   const sp = await searchParams;
   const tab: Tab = sp.tab === "payees" ? "payees" : "category";
@@ -39,7 +39,7 @@ export default async function PlanCheckPage({
         </Link>
       </div>
 
-      {tab === "payees" ? <PayeeSection /> : <CategorySection />}
+      {tab === "payees" ? <PayeeSection sort={sp.sort ?? ""} dir={sp.dir === "desc" ? "desc" : "asc"} /> : <CategorySection />}
     </div>
   );
 }

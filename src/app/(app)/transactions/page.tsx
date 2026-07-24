@@ -14,11 +14,19 @@ export const dynamic = "force-dynamic";
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string; state?: string; page?: string; q?: string; size?: string; cat?: string }>;
+  searchParams: Promise<{ account?: string; state?: string; page?: string; q?: string; size?: string; cat?: string; sort?: string; dir?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
   const pageSize = clampPageSize(sp.size);
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const sortMap: Record<string, Prisma.TransactionOrderByWithRelationInput> = {
+    bookingDate: { bookingDate: dir },
+    counterparty: { counterparty: dir },
+    account: { account: { name: dir } },
+    category: { category: { name: dir } },
+    amount: { amount: dir },
+  };
   // Umsätze archivierter Konten werden nicht mehr gelistet (sie zählen ohnehin
   // nicht in die Berechnungen). Endgültig entfernen: Konten-Seite.
   const where: Prisma.TransactionWhereInput = { account: { archived: false } };
@@ -38,7 +46,7 @@ export default async function TransactionsPage({
       where,
       // Stabiler Zweitschlüssel (id), damit Umsätze desselben Tages ihre
       // Reihenfolge über Neuladen/Kategorisieren behalten und nicht springen.
-      orderBy: [{ bookingDate: "desc" }, { id: "desc" }],
+      orderBy: sp.sort && sortMap[sp.sort] ? [sortMap[sp.sort], { id: "desc" }] : [{ bookingDate: "desc" }, { id: "desc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: { account: true, category: true },
@@ -62,6 +70,9 @@ export default async function TransactionsPage({
   }));
 
   const hasFilter = !!(sp.account || sp.state || sp.q || sp.cat);
+  const sizeParam = pageSize !== 50 ? String(pageSize) : undefined;
+  const filterParams = { account: sp.account, state: sp.state, q: sp.q, cat: sp.cat, size: sizeParam };
+  const pageParams = { ...filterParams, sort: sp.sort, dir: sp.dir };
 
   return (
     <div className="space-y-6">
@@ -118,6 +129,9 @@ export default async function TransactionsPage({
             transactions={rows}
             categories={catOptions}
             filterCategoryId={sp.cat === "none" || sp.state === "uncategorized" ? "none" : sp.cat || undefined}
+            sort={sp.sort ?? ""}
+            dir={dir}
+            sortParams={filterParams}
           />
         )}
 
@@ -127,7 +141,7 @@ export default async function TransactionsPage({
           totalItems={totalCount}
           pageSize={pageSize}
           basePath="/transactions"
-          params={{ account: sp.account, state: sp.state, q: sp.q, cat: sp.cat, size: pageSize !== 50 ? String(pageSize) : undefined }}
+          params={pageParams}
         />
       </div>
     </div>

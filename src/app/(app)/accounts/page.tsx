@@ -12,6 +12,7 @@ import {
 import { AccountForm } from "./account-form";
 import { DangerButton } from "./danger-button";
 import { PageAlerts } from "@/components/page-alerts";
+import { SortableTh } from "@/components/sortable-th";
 
 export const dynamic = "force-dynamic";
 
@@ -29,11 +30,32 @@ function toDateInput(d: Date): string {
   return new Date(d).toISOString().slice(0, 10);
 }
 
-export default async function AccountsPage() {
-  const accounts = await getAccountsWithBalance();
-  const total = accounts
+export default async function AccountsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
+  const sp = await searchParams;
+  const accountsRaw = await getAccountsWithBalance();
+  const total = accountsRaw
     .filter((a) => !a.excludedFromCalc)
     .reduce((s, a) => s + a.currentBalance, 0);
+
+  // Sortierung der Kontenliste (im Speicher). Standard: Reihenfolge aus der Query.
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const mul = dir === "asc" ? 1 : -1;
+  const sortVal: Record<string, (a: (typeof accountsRaw)[number]) => number | string> = {
+    name: (a) => a.name.toLowerCase(),
+    txCount: (a) => a.txCount,
+    currentBalance: (a) => a.currentBalance,
+  };
+  const accounts = sp.sort && sortVal[sp.sort]
+    ? [...accountsRaw].sort((a, b) => {
+        const va = sortVal[sp.sort!](a);
+        const vb = sortVal[sp.sort!](b);
+        return va < vb ? -1 * mul : va > vb ? 1 * mul : 0;
+      })
+    : accountsRaw;
 
   // Archivierte Konten separat (mit Umsatzanzahl) – bleiben aus allen
   // Berechnungen ausgeschlossen.
@@ -72,11 +94,11 @@ export default async function AccountsPage() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="th">Name</th>
-                  <th className="th">Umsätze</th>
+                <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                  <SortableTh col="name" label="Name" sort={sp.sort ?? ""} dir={dir} basePath="/accounts" />
+                  <SortableTh col="txCount" label="Umsätze" sort={sp.sort ?? ""} dir={dir} basePath="/accounts" />
                   <th className="th">Anfangssaldo &amp; Stichtag</th>
-                  <th className="th text-right">Aktueller Saldo</th>
+                  <SortableTh col="currentBalance" label="Aktueller Saldo" sort={sp.sort ?? ""} dir={dir} basePath="/accounts" align="right" />
                   <th className="th text-center">In Berechnung</th>
                   <th className="th"></th>
                 </tr>

@@ -3,6 +3,7 @@ import { detectRecurring } from "@/lib/recurring";
 import { createPlannedFromSuggestion } from "@/app/actions/planning";
 import { addDays, isoDate, todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
+import { SortableTh } from "@/components/sortable-th";
 
 const REC_LABEL: Record<string, string> = {
   WEEKLY: "wöchentlich",
@@ -11,12 +12,32 @@ const REC_LABEL: Record<string, string> = {
   YEARLY: "jährlich",
 };
 
+const REC_ORDER: Record<string, number> = { WEEKLY: 0, MONTHLY: 1, QUARTERLY: 2, YEARLY: 3 };
+
 // „Nach Empfänger": automatisch erkannte regelmäßige Zahlungen (pro Gegenpartei,
 // echter Rhythmus). Ergänzt den kategorienbasierten Plan-Check um präzise
 // Cashflows für die Liquiditätsprognose.
-export async function PayeeSection() {
-  const suggestions = await detectRecurring();
+export async function PayeeSection({ sort, dir }: { sort: string; dir: "asc" | "desc" }) {
+  const raw = await detectRecurring();
   const today = todayUTC();
+
+  // Sortierung (im Speicher). Standard: Reihenfolge aus detectRecurring.
+  const mul = dir === "asc" ? 1 : -1;
+  const sortVal: Record<string, (s: (typeof raw)[number]) => number | string> = {
+    counterparty: (s) => s.counterparty.toLowerCase(),
+    recurrence: (s) => REC_ORDER[s.recurrence] ?? 99,
+    medianAmount: (s) => s.medianAmount,
+    occurrences: (s) => s.occurrences,
+    categoryName: (s) => (s.categoryName ?? "").toLowerCase(),
+  };
+  const suggestions = sort && sortVal[sort]
+    ? [...raw].sort((a, b) => {
+        const va = sortVal[sort](a);
+        const vb = sortVal[sort](b);
+        return va < vb ? -1 * mul : va > vb ? 1 * mul : 0;
+      })
+    : raw;
+  const sortParams = { tab: "payees" };
 
   return (
     <div className="space-y-3">
@@ -34,11 +55,11 @@ export async function PayeeSection() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="th">Gegenpartei</th>
-                  <th className="th">Rhythmus</th>
-                  <th className="th text-right">Betrag (Median)</th>
-                  <th className="th">Vorkommen</th>
-                  <th className="th">Kategorie</th>
+                  <SortableTh col="counterparty" label="Gegenpartei" sort={sort} dir={dir} basePath="/plan-check" params={sortParams} />
+                  <SortableTh col="recurrence" label="Rhythmus" sort={sort} dir={dir} basePath="/plan-check" params={sortParams} />
+                  <SortableTh col="medianAmount" label="Betrag (Median)" sort={sort} dir={dir} basePath="/plan-check" params={sortParams} align="right" />
+                  <SortableTh col="occurrences" label="Vorkommen" sort={sort} dir={dir} basePath="/plan-check" params={sortParams} />
+                  <SortableTh col="categoryName" label="Kategorie" sort={sort} dir={dir} basePath="/plan-check" params={sortParams} />
                   <th className="th"></th>
                 </tr>
               </thead>

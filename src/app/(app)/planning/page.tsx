@@ -4,6 +4,7 @@ import { startOfDayUTC, todayUTC } from "@/lib/dates";
 import { Pagination, clampPageSize } from "@/components/pagination";
 import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
 import { CategoryOptions } from "@/components/category-select";
+import { SortableTh } from "@/components/sortable-th";
 import { PlannedForm } from "./planned-form";
 import { PlannedRow } from "./planned-row";
 
@@ -21,12 +22,23 @@ const RHYTHM_OPT: Record<(typeof RECURRENCES)[number], string> = {
 export default async function PlanningPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cat?: string; dir?: string; rec?: string; state?: string; q?: string; page?: string; size?: string }>;
+  searchParams: Promise<{ cat?: string; dir?: string; rec?: string; state?: string; q?: string; page?: string; size?: string; sort?: string; sdir?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
   const pageSize = clampPageSize(sp.size);
   const today = startOfDayUTC(todayUTC());
+
+  // Sortierung: eigener Richtungs-Parameter `sdir`, da `dir` hier den
+  // Richtungsfilter (Ein-/Auszahlung) belegt.
+  const sdir: "asc" | "desc" = sp.sdir === "desc" ? "desc" : "asc";
+  const sortMap: Record<string, Prisma.PlannedItemOrderByWithRelationInput> = {
+    name: { name: sdir },
+    recurrence: { recurrence: sdir },
+    startDate: { startDate: sdir },
+    endDate: { endDate: sdir },
+    amount: { amount: sdir },
+  };
 
   // Filter → WHERE
   const where: Prisma.PlannedItemWhereInput = {};
@@ -45,7 +57,7 @@ export default async function PlanningPage({
   const [items, totalCount, categories] = await Promise.all([
     prisma.plannedItem.findMany({
       where,
-      orderBy: [{ active: "desc" }, { startDate: "asc" }],
+      orderBy: sp.sort && sortMap[sp.sort] ? [sortMap[sp.sort]] : [{ active: "desc" }, { startDate: "asc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
       include: { category: true },
@@ -57,6 +69,9 @@ export default async function PlanningPage({
   const pages = Math.ceil(totalCount / pageSize);
   const catOptions = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
   const hasFilter = !!(sp.cat || sp.dir || sp.rec || sp.state || sp.q);
+  const sizeParam = pageSize !== 50 ? String(pageSize) : undefined;
+  const filterParams = { cat: sp.cat, dir: sp.dir, rec: sp.rec, state: sp.state, q: sp.q, size: sizeParam };
+  const pageParams = { ...filterParams, sort: sp.sort, sdir: sp.sdir };
 
   return (
     <div className="space-y-6">
@@ -130,12 +145,12 @@ export default async function PlanningPage({
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="th">Bezeichnung</th>
-                  <th className="th">Rhythmus</th>
-                  <th className="th">Ab</th>
-                  <th className="th">Bis</th>
-                  <th className="th text-right">Betrag</th>
+                <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                  <SortableTh col="name" label="Bezeichnung" sort={sp.sort ?? ""} dir={sdir} dirKey="sdir" basePath="/planning" params={filterParams} />
+                  <SortableTh col="recurrence" label="Rhythmus" sort={sp.sort ?? ""} dir={sdir} dirKey="sdir" basePath="/planning" params={filterParams} />
+                  <SortableTh col="startDate" label="Ab" sort={sp.sort ?? ""} dir={sdir} dirKey="sdir" basePath="/planning" params={filterParams} />
+                  <SortableTh col="endDate" label="Bis" sort={sp.sort ?? ""} dir={sdir} dirKey="sdir" basePath="/planning" params={filterParams} />
+                  <SortableTh col="amount" label="Betrag" sort={sp.sort ?? ""} dir={sdir} dirKey="sdir" basePath="/planning" params={filterParams} align="right" />
                   <th className="th"></th>
                 </tr>
               </thead>
@@ -169,7 +184,7 @@ export default async function PlanningPage({
           totalItems={totalCount}
           pageSize={pageSize}
           basePath="/planning"
-          params={{ cat: sp.cat, dir: sp.dir, rec: sp.rec, state: sp.state, q: sp.q, size: pageSize !== 50 ? String(pageSize) : undefined }}
+          params={pageParams}
         />
       </div>
     </div>

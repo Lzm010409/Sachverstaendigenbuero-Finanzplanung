@@ -6,6 +6,7 @@ import { RuleRow } from "./rule-row";
 import type { AccountOpt } from "./rule-builder";
 import { isValidTree, type Node } from "@/lib/rule-expr";
 import { ConfirmSubmit } from "@/components/confirm-submit";
+import { SortableTh } from "@/components/sortable-th";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,19 @@ type CatRow = {
   _count: { transactions: number; budgets: number };
 };
 
-function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; tone: "in" | "out" }) {
+function CategoryTable({
+  title,
+  rows,
+  tone,
+  sort,
+  dir,
+}: {
+  title: string;
+  rows: CatRow[];
+  tone: "in" | "out";
+  sort: string;
+  dir: "asc" | "desc";
+}) {
   return (
     <div>
       <h3 className={`mb-2 text-xs font-semibold uppercase tracking-wide ${tone === "in" ? "text-emerald-700" : "text-red-700"}`}>
@@ -33,9 +46,9 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                <th className="th">Kategorie</th>
-                <th className="th text-right">Umsätze</th>
-                <th className="th text-right">Budgets</th>
+                <SortableTh col="name" label="Kategorie" sort={sort} dir={dir} basePath="/categories" />
+                <SortableTh col="transactions" label="Umsätze" sort={sort} dir={dir} basePath="/categories" align="right" />
+                <SortableTh col="budgets" label="Budgets" sort={sort} dir={dir} basePath="/categories" align="right" />
                 <th className="th"></th>
               </tr>
             </thead>
@@ -81,7 +94,12 @@ function CategoryTable({ title, rows, tone }: { title: string; rows: CatRow[]; t
   );
 }
 
-export default async function CategoriesPage() {
+export default async function CategoriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
+  const sp = await searchParams;
   const [active, trashed, rules, accounts] = await Promise.all([
     prisma.category.findMany({
       where: { deletedAt: null },
@@ -97,8 +115,26 @@ export default async function CategoriesPage() {
     prisma.account.findMany({ where: { archived: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
-  const income = active.filter((c) => c.kind === "INCOME");
-  const expense = active.filter((c) => c.kind === "EXPENSE");
+  // Sortierung der Kategorien-Tabellen (im Speicher; gilt für Einnahmen +
+  // Ausgaben gleichermaßen). Standard: nach Name.
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const mul = dir === "asc" ? 1 : -1;
+  const catSortVal: Record<string, (c: CatRow) => number | string> = {
+    name: (c) => c.name.toLowerCase(),
+    transactions: (c) => c._count.transactions,
+    budgets: (c) => c._count.budgets,
+  };
+  const sortCats = (rows: CatRow[]) =>
+    sp.sort && catSortVal[sp.sort]
+      ? [...rows].sort((a, b) => {
+          const va = catSortVal[sp.sort!](a);
+          const vb = catSortVal[sp.sort!](b);
+          return va < vb ? -1 * mul : va > vb ? 1 * mul : 0;
+        })
+      : rows;
+
+  const income = sortCats(active.filter((c) => c.kind === "INCOME"));
+  const expense = sortCats(active.filter((c) => c.kind === "EXPENSE"));
   const catOptions: CatOption[] = active.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
   const accountOptions: AccountOpt[] = accounts.map((a) => ({ id: a.id, name: a.name }));
   const now = Date.now();
@@ -121,8 +157,8 @@ export default async function CategoriesPage() {
           <p className="text-sm text-slate-400">Noch keine Kategorien.</p>
         ) : (
           <>
-            <CategoryTable title="Einnahmen" rows={income} tone="in" />
-            <CategoryTable title="Ausgaben" rows={expense} tone="out" />
+            <CategoryTable title="Einnahmen" rows={income} tone="in" sort={sp.sort ?? ""} dir={dir} />
+            <CategoryTable title="Ausgaben" rows={expense} tone="out" sort={sp.sort ?? ""} dir={dir} />
           </>
         )}
       </div>

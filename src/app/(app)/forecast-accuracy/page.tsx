@@ -1,11 +1,36 @@
 import { getForecastAccuracy } from "@/lib/snapshots";
 import { formatCents } from "@/lib/money";
+import { SortableTh } from "@/components/sortable-th";
 import { RecordSnapshotButton } from "./record-button";
 
 export const dynamic = "force-dynamic";
 
-export default async function ForecastAccuracyPage() {
-  const rows = await getForecastAccuracy();
+export default async function ForecastAccuracyPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
+  const sp = await searchParams;
+  const rawRows = await getForecastAccuracy();
+
+  // Sortierung (im Speicher). Standard: Reihenfolge aus getForecastAccuracy.
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const mul = dir === "asc" ? 1 : -1;
+  const sortVal: Record<string, (r: (typeof rawRows)[number]) => number | string> = {
+    targetMonth: (r) => r.targetMonth,
+    horizonDays: (r) => r.horizonDays,
+    projected: (r) => r.projected,
+    actual: (r) => r.actual ?? Number.NEGATIVE_INFINITY,
+    deviation: (r) => (r.deviation == null ? Number.NEGATIVE_INFINITY : Math.abs(r.deviation)),
+  };
+  const rows = sp.sort && sortVal[sp.sort]
+    ? [...rawRows].sort((a, b) => {
+        const va = sortVal[sp.sort!](a);
+        const vb = sortVal[sp.sort!](b);
+        return va < vb ? -1 * mul : va > vb ? 1 * mul : 0;
+      })
+    : rawRows;
+
   const evaluated = rows.filter((r) => r.actual != null);
   const mae =
     evaluated.length > 0
@@ -45,11 +70,11 @@ export default async function ForecastAccuracyPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                <th className="th">Zielmonat</th>
-                <th className="th">Horizont</th>
-                <th className="th text-right">Prognose</th>
-                <th className="th text-right">Ist</th>
-                <th className="th text-right">Abweichung</th>
+                <SortableTh col="targetMonth" label="Zielmonat" sort={sp.sort ?? ""} dir={dir} basePath="/forecast-accuracy" />
+                <SortableTh col="horizonDays" label="Horizont" sort={sp.sort ?? ""} dir={dir} basePath="/forecast-accuracy" />
+                <SortableTh col="projected" label="Prognose" sort={sp.sort ?? ""} dir={dir} basePath="/forecast-accuracy" align="right" />
+                <SortableTh col="actual" label="Ist" sort={sp.sort ?? ""} dir={dir} basePath="/forecast-accuracy" align="right" />
+                <SortableTh col="deviation" label="Abweichung" sort={sp.sort ?? ""} dir={dir} basePath="/forecast-accuracy" align="right" />
               </tr>
             </thead>
             <tbody>

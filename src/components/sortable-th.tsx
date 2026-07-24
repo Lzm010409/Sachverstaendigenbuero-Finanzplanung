@@ -11,6 +11,8 @@ export function SortableTh({
   basePath,
   params,
   align = "left",
+  sortKey = "sort",
+  dirKey = "dir",
 }: {
   col: string;
   label: string;
@@ -19,13 +21,17 @@ export function SortableTh({
   basePath: string;
   params?: Record<string, string | undefined>;
   align?: "left" | "right";
+  // Query-Parameter-Namen für Spalte/Richtung (Standard: sort/dir). Auf Seiten,
+  // die `dir` bereits als Filter nutzen (z.B. Planung), kann dirKey abweichen.
+  sortKey?: string;
+  dirKey?: string;
 }) {
   const active = sort === col;
   const nextDir: "asc" | "desc" = active && dir === "asc" ? "desc" : "asc";
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params ?? {})) if (v != null && v !== "") qs.set(k, v);
-  qs.set("sort", col);
-  qs.set("dir", nextDir);
+  qs.set(sortKey, col);
+  qs.set(dirKey, nextDir);
   // page beim Umsortieren zurücksetzen
   qs.delete("page");
 

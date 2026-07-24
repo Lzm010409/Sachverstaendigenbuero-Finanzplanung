@@ -2,17 +2,27 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { Pagination, clampPageSize } from "@/components/pagination";
 import { FilterMemory, AutoFilterForm } from "@/components/filter-memory";
+import { SortableTh } from "@/components/sortable-th";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContactsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string; size?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; size?: string; sort?: string; dir?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
   const PAGE_SIZE = clampPageSize(sp.size);
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const sortMap: Record<string, Prisma.ContactOrderByWithRelationInput> = {
+    name: { name: dir },
+    type: { type: dir },
+    orgName: { orgName: dir },
+    email: { email: dir },
+  };
+  const orderBy: Prisma.ContactOrderByWithRelationInput =
+    sp.sort && sortMap[sp.sort] ? sortMap[sp.sort] : { name: "asc" };
   const where: Prisma.ContactWhereInput = sp.q
     ? {
         OR: [
@@ -26,7 +36,7 @@ export default async function ContactsPage({
   const [contacts, matchCount, total] = await Promise.all([
     prisma.contact.findMany({
       where,
-      orderBy: { name: "asc" },
+      orderBy,
       skip: (page - 1) * PAGE_SIZE,
       take: PAGE_SIZE,
     }),
@@ -34,6 +44,11 @@ export default async function ContactsPage({
     prisma.contact.count(),
   ]);
   const totalPages = Math.ceil(matchCount / PAGE_SIZE);
+  const sizeParam = PAGE_SIZE !== 50 ? String(PAGE_SIZE) : undefined;
+  // Für Sortier-Köpfe: Filter beibehalten (sort/dir setzt SortableTh selbst).
+  const sortFilterParams = { q: sp.q, size: sizeParam };
+  // Für Pagination: Filter + aktive Sortierung beibehalten.
+  const pageParams = { q: sp.q, size: sizeParam, sort: sp.sort, dir: sp.dir };
 
   return (
     <div className="space-y-6">
@@ -62,11 +77,11 @@ export default async function ContactsPage({
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
-                  <tr className="border-b border-slate-100">
-                    <th className="th">Name</th>
-                    <th className="th">Typ</th>
-                    <th className="th">Organisation</th>
-                    <th className="th">E-Mail</th>
+                  <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                    <SortableTh col="name" label="Name" sort={sp.sort ?? ""} dir={dir} basePath="/contacts" params={sortFilterParams} />
+                    <SortableTh col="type" label="Typ" sort={sp.sort ?? ""} dir={dir} basePath="/contacts" params={sortFilterParams} />
+                    <SortableTh col="orgName" label="Organisation" sort={sp.sort ?? ""} dir={dir} basePath="/contacts" params={sortFilterParams} />
+                    <SortableTh col="email" label="E-Mail" sort={sp.sort ?? ""} dir={dir} basePath="/contacts" params={sortFilterParams} />
                   </tr>
                 </thead>
                 <tbody>
@@ -93,7 +108,7 @@ export default async function ContactsPage({
               totalItems={matchCount}
               pageSize={PAGE_SIZE}
               basePath="/contacts"
-              params={{ q: sp.q, size: PAGE_SIZE !== 50 ? String(PAGE_SIZE) : undefined }}
+              params={pageParams}
             />
           </>
         )}

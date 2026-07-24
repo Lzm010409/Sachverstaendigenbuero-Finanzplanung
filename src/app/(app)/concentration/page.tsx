@@ -1,6 +1,7 @@
 import { getConcentration } from "@/lib/concentration";
 import { formatCents } from "@/lib/money";
 import { PageAlerts } from "@/components/page-alerts";
+import { SortableTh } from "@/components/sortable-th";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +11,31 @@ function hhiLabel(hhi: number): { text: string; cls: string } {
   return { text: "hoch", cls: "text-red-600" };
 }
 
-export default async function ConcentrationPage({ searchParams }: { searchParams: Promise<{ m?: string }> }) {
+export default async function ConcentrationPage({ searchParams }: { searchParams: Promise<{ m?: string; sort?: string; dir?: string }> }) {
   const sp = await searchParams;
   const months = Math.min(36, Math.max(3, Number(sp.m) || 12));
   const report = await getConcentration(months);
   const hhi = hhiLabel(report.hhi);
   const pct = (v: number) => `${(v * 100).toFixed(1)} %`;
+
+  // Sortierung der Auftraggeber-Zeilen (im Speicher). Standard: nach Erlös (wie
+  // von getConcentration geliefert).
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const mul = dir === "asc" ? 1 : -1;
+  const sortVal: Record<string, (d: (typeof report.debtors)[number]) => number | string> = {
+    name: (d) => d.name.toLowerCase(),
+    revenue: (d) => d.revenue,
+    share: (d) => d.share,
+    openReceivable: (d) => d.openReceivable,
+  };
+  const debtors = sp.sort && sortVal[sp.sort]
+    ? [...report.debtors].sort((a, b) => {
+        const va = sortVal[sp.sort!](a);
+        const vb = sortVal[sp.sort!](b);
+        return va < vb ? -1 * mul : va > vb ? 1 * mul : 0;
+      })
+    : report.debtors;
+  const sortParams = { m: String(months) };
 
   return (
     <div className="space-y-6">
@@ -51,15 +71,15 @@ export default async function ConcentrationPage({ searchParams }: { searchParams
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
-                <th className="th">Auftraggeber</th>
-                <th className="th text-right">Erlöse</th>
-                <th className="th text-right">Anteil</th>
+                <SortableTh col="name" label="Auftraggeber" sort={sp.sort ?? ""} dir={dir} basePath="/concentration" params={sortParams} />
+                <SortableTh col="revenue" label="Erlöse" sort={sp.sort ?? ""} dir={dir} basePath="/concentration" params={sortParams} align="right" />
+                <SortableTh col="share" label="Anteil" sort={sp.sort ?? ""} dir={dir} basePath="/concentration" params={sortParams} align="right" />
                 <th className="th">Anteil (visuell)</th>
-                <th className="th text-right">offene Forderung</th>
+                <SortableTh col="openReceivable" label="offene Forderung" sort={sp.sort ?? ""} dir={dir} basePath="/concentration" params={sortParams} align="right" />
               </tr>
             </thead>
             <tbody>
-              {report.debtors.map((d) => (
+              {debtors.map((d) => (
                 <tr key={d.name} className="border-b border-slate-50">
                   <td className="td font-medium">{d.name}</td>
                   <td className="td text-right tabular-nums">{formatCents(d.revenue)}</td>

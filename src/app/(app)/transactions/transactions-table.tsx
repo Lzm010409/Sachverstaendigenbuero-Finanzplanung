@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CategoryOptions, type CatOpt } from "@/components/category-select";
+import { SortableTh } from "@/components/sortable-th";
 
 // Persistiert über die API-Route (fetch), damit KEINE Server-Action-Revalidierung
 // die schwere Umsätze-Route bei jedem Klick neu rendert (verhindert 503 bei
@@ -35,6 +36,9 @@ export function TransactionsTable({
   transactions,
   categories,
   filterCategoryId,
+  sort,
+  dir,
+  sortParams,
 }: {
   transactions: TxRow[];
   categories: CatOpt[];
@@ -42,6 +46,10 @@ export function TransactionsTable({
   // undefined = kein Filter. Passt eine Zeile nach dem Kategorisieren nicht mehr,
   // wird sie lokal ausgeblendet (wie früher der Refresh, aber ohne Neuladen).
   filterCategoryId?: string;
+  // Serverseitige Sortierung: aktive Spalte/Richtung + beizubehaltende Filter.
+  sort: string;
+  dir: "asc" | "desc";
+  sortParams: Record<string, string | undefined>;
 }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -165,7 +173,7 @@ export function TransactionsTable({
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-slate-100">
+            <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
               <th className="th w-8">
                 <input
                   type="checkbox"
@@ -178,11 +186,11 @@ export function TransactionsTable({
                   className="h-4 w-4 rounded border-slate-300"
                 />
               </th>
-              <th className="th">Datum</th>
-              <th className="th">Gegenpartei / Zweck</th>
-              <th className="th">Konto</th>
-              <th className="th">Kategorie</th>
-              <th className="th text-right">Betrag</th>
+              <SortableTh col="bookingDate" label="Datum" sort={sort} dir={dir} basePath="/transactions" params={sortParams} />
+              <SortableTh col="counterparty" label="Gegenpartei / Zweck" sort={sort} dir={dir} basePath="/transactions" params={sortParams} />
+              <SortableTh col="account" label="Konto" sort={sort} dir={dir} basePath="/transactions" params={sortParams} />
+              <SortableTh col="category" label="Kategorie" sort={sort} dir={dir} basePath="/transactions" params={sortParams} />
+              <SortableTh col="amount" label="Betrag" sort={sort} dir={dir} basePath="/transactions" params={sortParams} align="right" />
               <th className="th"></th>
             </tr>
           </thead>

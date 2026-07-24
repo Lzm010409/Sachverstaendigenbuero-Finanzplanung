@@ -121,6 +121,9 @@ export interface SevdeskOpenItem {
   amountCents: number; // Bruttobetrag, positiv
   paidAmountCents: number; // bereits bezahlter Anteil
   dueDate: Date;
+  // Mahnstufe aus sevDesk (Rechnungsfeld dunningLevel: 1=Zahlungserinnerung,
+  // 2=1. Mahnung, 3=2. Mahnung; null=keine). Belege haben keine -> 0.
+  reminderLevel: number;
 }
 
 // Restbetrag bis zu dem ein Beleg als "abgeschlossen" gilt. sevDesk rundet
@@ -188,6 +191,7 @@ export async function fetchOpenInvoices(token: string): Promise<SevdeskOpenItem[
       amountCents: grossCents,
       paidAmountCents: paid,
       dueDate: due,
+      reminderLevel: Math.min(3, Math.max(0, Math.floor(Number(o.dunningLevel) || 0))),
     });
   }
   return out;
@@ -223,6 +227,7 @@ export async function fetchOpenVouchers(token: string): Promise<SevdeskOpenItem[
       amountCents: grossCents,
       paidAmountCents: paid,
       dueDate: due,
+      reminderLevel: 0,
     });
   }
   return out;

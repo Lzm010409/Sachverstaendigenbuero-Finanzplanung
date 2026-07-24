@@ -187,7 +187,7 @@ export async function syncSevdeskDocuments(): Promise<SevdeskDocsResult> {
   // wiederholten Syncs).
   const existingItems = await prisma.openItem.findMany({
     where: { source: { in: ["sevdesk-invoice", "sevdesk-voucher"] } },
-    select: { id: true, source: true, externalId: true, kind: true, counterparty: true, reference: true, amount: true, paidAmount: true, dueDate: true, paid: true },
+    select: { id: true, source: true, externalId: true, kind: true, counterparty: true, reference: true, amount: true, paidAmount: true, dueDate: true, reminderLevel: true, paid: true },
   });
   const byKey = new Map(existingItems.map((e) => [`${e.source}:${e.externalId}`, e]));
 
@@ -204,6 +204,7 @@ export async function syncSevdeskDocuments(): Promise<SevdeskDocsResult> {
         data: {
           kind: it.kind, counterparty: clipped, reference: it.reference,
           amount: it.amountCents, paidAmount: it.paidAmountCents, dueDate: it.dueDate,
+          reminderLevel: it.reminderLevel,
           externalId: it.externalId, source: it.source, note: "sevDesk",
         },
       });
@@ -211,13 +212,14 @@ export async function syncSevdeskDocuments(): Promise<SevdeskDocsResult> {
       const changed =
         cur.kind !== it.kind || cur.counterparty !== clipped || cur.reference !== it.reference ||
         cur.amount !== it.amountCents || cur.paidAmount !== it.paidAmountCents ||
-        cur.dueDate.getTime() !== it.dueDate.getTime() || cur.paid;
+        cur.dueDate.getTime() !== it.dueDate.getTime() || cur.reminderLevel !== it.reminderLevel || cur.paid;
       if (changed) {
         await prisma.openItem.update({
           where: { id: cur.id },
           data: {
             kind: it.kind, counterparty: clipped, reference: it.reference,
-            amount: it.amountCents, paidAmount: it.paidAmountCents, dueDate: it.dueDate, paid: false,
+            amount: it.amountCents, paidAmount: it.paidAmountCents, dueDate: it.dueDate,
+            reminderLevel: it.reminderLevel, paid: false,
           },
         });
       }

@@ -40,3 +40,24 @@ export const INTEGRATIONS = {
   sevdesk: "sevdesk",
   pipedrive: "pipedrive",
 } as const;
+
+export interface Branding {
+  /** Same-origin-URL des Logos (mit Cache-Buster) oder null, wenn keins hinterlegt. */
+  logoUrl: string | null;
+  /** Firmenname für Kopfzeilen (Website/Bericht). */
+  company: string;
+}
+
+export const DEFAULT_COMPANY = "Gollenstede Sachverstand";
+
+/** Logo + Firmenname für Website und Berichte. Logo wird als eigene Route
+ *  ausgeliefert (schlankes HTML, cachefähig), Version über logoUpdatedAt. */
+export async function getBranding(): Promise<Branding> {
+  const rows = await getSettings(["branding.logo", "branding.logoUpdatedAt", "branding.company"]);
+  const has = !!rows["branding.logo"];
+  const v = rows["branding.logoUpdatedAt"] || "";
+  return {
+    logoUrl: has ? `/api/branding/logo${v ? `?v=${encodeURIComponent(v)}` : ""}` : null,
+    company: rows["branding.company"]?.trim() || DEFAULT_COMPANY,
+  };
+}

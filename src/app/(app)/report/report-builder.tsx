@@ -6,6 +6,7 @@ export type ReportTone = "default" | "positive" | "negative" | "warning";
 
 export interface ReportData {
   company: string;
+  logoUrl?: string | null;
   dateLabel: string;
   kpis: { id: string; label: string; value: string; hint?: string; tone?: ReportTone; group?: string }[];
   cashflow: { months: { label: string; isFuture: boolean; start: string; inflow: string; outflow: string; end: string; endNegative: boolean }[] };
@@ -94,13 +95,13 @@ const toneCls: Record<ReportTone, string> = {
   warning: "text-amber-600",
 };
 
-function loadCfg(preset: string): { title: string; kpis: string[]; sections: SectionId[] } | null {
+function loadCfg(preset: string): { title: string; kpis: string[]; sections: SectionId[]; landscape: boolean } | null {
   try {
     const raw = localStorage.getItem(`report:cfg:${preset}`);
     if (!raw) return null;
     const p = JSON.parse(raw);
     if (!Array.isArray(p.kpis) || !Array.isArray(p.sections)) return null;
-    return { title: typeof p.title === "string" ? p.title : "", kpis: p.kpis, sections: p.sections };
+    return { title: typeof p.title === "string" ? p.title : "", kpis: p.kpis, sections: p.sections, landscape: !!p.landscape };
   } catch {
     return null;
   }
@@ -111,6 +112,7 @@ export function ReportBuilder({ data }: { data: ReportData }) {
   const [title, setTitle] = useState<string>("");
   const [kpiSel, setKpiSel] = useState<Set<string>>(new Set(PRESETS.full.kpis));
   const [secSel, setSecSel] = useState<Set<SectionId>>(new Set(PRESETS.full.sections));
+  const [landscape, setLandscape] = useState(false);
   const [ready, setReady] = useState(false);
   const [showConfig, setShowConfig] = useState(true);
 
@@ -136,20 +138,22 @@ export function ReportBuilder({ data }: { data: ReportData }) {
     const title = saved?.title ?? "";
     const kpis = saved?.kpis ?? base.kpis;
     const sections = (saved?.sections ?? base.sections) as SectionId[];
+    const land = saved?.landscape ?? false;
     setTitle(title);
     setKpiSel(new Set(kpis));
     setSecSel(new Set(sections));
+    setLandscape(land);
     try {
       localStorage.setItem("report:preset", p);
-      if (persist) save(p, title, kpis, sections);
+      if (persist) save(p, title, kpis, sections, land);
     } catch {
       /* ignore */
     }
   };
 
-  const save = (p: string, t: string, kpis: string[], sections: SectionId[]) => {
+  const save = (p: string, t: string, kpis: string[], sections: SectionId[], land: boolean) => {
     try {
-      localStorage.setItem(`report:cfg:${p}`, JSON.stringify({ title: t, kpis, sections }));
+      localStorage.setItem(`report:cfg:${p}`, JSON.stringify({ title: t, kpis, sections, landscape: land }));
     } catch {
       /* ignore */
     }
@@ -160,7 +164,7 @@ export function ReportBuilder({ data }: { data: ReportData }) {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      save(preset, title, [...next], [...secSel]);
+      save(preset, title, [...next], [...secSel], landscape);
       return next;
     });
   };
@@ -169,20 +173,28 @@ export function ReportBuilder({ data }: { data: ReportData }) {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
-      save(preset, title, [...kpiSel], [...next]);
+      save(preset, title, [...kpiSel], [...next], landscape);
       return next;
     });
   };
   const onTitle = (t: string) => {
     setTitle(t);
-    save(preset, t, [...kpiSel], [...secSel]);
+    save(preset, t, [...kpiSel], [...secSel], landscape);
+  };
+  const toggleLandscape = () => {
+    setLandscape((prev) => {
+      const next = !prev;
+      save(preset, title, [...kpiSel], [...secSel], next);
+      return next;
+    });
   };
   const resetPreset = () => {
     const base = PRESETS[preset] ?? PRESETS.full;
     setTitle("");
     setKpiSel(new Set(base.kpis));
     setSecSel(new Set(base.sections));
-    save(preset, "", base.kpis, [...base.sections]);
+    setLandscape(false);
+    save(preset, "", base.kpis, [...base.sections], false);
   };
 
   // KPIs nach Gruppen für die Konfiguration und die Darstellung.
@@ -198,6 +210,9 @@ export function ReportBuilder({ data }: { data: ReportData }) {
 
   const selectedKpis = data.kpis.filter((k) => kpiSel.has(k.id));
   const reportTitle = title.trim() || PRESETS[preset]?.name || "Bericht";
+  // Im Hochformat nur ein Fenster der Monate (passt zuverlässig auf A4 hoch),
+  // im Querformat alle geladenen Monate.
+  const months = landscape ? data.cashflow.months : data.cashflow.months.slice(0, 6);
 
   if (!ready) return null;
 
@@ -233,9 +248,16 @@ export function ReportBuilder({ data }: { data: ReportData }) {
                 <label className="label">Titel (optional)</label>
                 <input value={title} onChange={(e) => onTitle(e.target.value)} className="input" placeholder={PRESETS[preset]?.name} />
               </div>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={landscape} onChange={toggleLandscape} className="h-4 w-4 rounded border-slate-300" />
+                Querformat (Landscape)
+              </label>
               <button className="btn-secondary" onClick={resetPreset}>Vorlage zurücksetzen</button>
             </div>
-            <p className="-mt-2 text-xs text-slate-400">{PRESETS[preset]?.subtitle}</p>
+            <p className="-mt-2 text-xs text-slate-400">
+              {PRESETS[preset]?.subtitle}
+              {landscape ? " · Querformat: bis zu 12 Monate im Verlauf." : " · Hochformat: 6 Monate im Verlauf."}
+            </p>
 
             <div>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600">Auswertungen</h3>
@@ -253,8 +275,8 @@ export function ReportBuilder({ data }: { data: ReportData }) {
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">Kennzahlen ({selectedKpis.length})</h3>
                 <div className="flex gap-3 text-xs">
-                  <button className="text-brand hover:underline" onClick={() => { const all = data.kpis.map((k) => k.id); setKpiSel(new Set(all)); save(preset, title, all, [...secSel]); }}>alle</button>
-                  <button className="text-slate-400 hover:underline" onClick={() => { setKpiSel(new Set()); save(preset, title, [], [...secSel]); }}>keine</button>
+                  <button className="text-brand hover:underline" onClick={() => { const all = data.kpis.map((k) => k.id); setKpiSel(new Set(all)); save(preset, title, all, [...secSel], landscape); }}>alle</button>
+                  <button className="text-slate-400 hover:underline" onClick={() => { setKpiSel(new Set()); save(preset, title, [], [...secSel], landscape); }}>keine</button>
                 </div>
               </div>
               <div className="space-y-3">
@@ -277,13 +299,20 @@ export function ReportBuilder({ data }: { data: ReportData }) {
         )}
       </div>
 
+      {/* Seitenausrichtung fürs PDF (nur im Querformat überschreiben). */}
+      {landscape && <style>{"@media print { @page { size: A4 landscape; margin: 12mm; } }"}</style>}
+
       {/* Druckbereich */}
       <div className="report-print space-y-6 print:space-y-4">
-        <header className="report-section flex items-start justify-between border-b border-slate-200 pb-4">
+        <header className="report-section flex items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">{reportTitle}</h1>
             <p className="text-sm text-slate-500">{data.company} · Stand {data.dateLabel}</p>
           </div>
+          {data.logoUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={data.logoUrl} alt={data.company} className="max-h-16 max-w-[220px] object-contain" />
+          )}
         </header>
 
         {selectedKpis.length > 0 && (
@@ -318,16 +347,16 @@ export function ReportBuilder({ data }: { data: ReportData }) {
               <thead>
                 <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
                   <th className="px-3 py-2 text-left">Monat</th>
-                  {data.cashflow.months.map((m) => (
+                  {months.map((m) => (
                     <th key={m.label} className={`px-3 py-2 text-right ${m.isFuture ? "italic text-slate-400" : ""}`}>{m.label}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                <tr><td className="px-3 py-1.5 text-slate-600">Liquidität Start</td>{data.cashflow.months.map((m) => <td key={m.label} className="px-3 py-1.5 text-right tabular-nums">{m.start}</td>)}</tr>
-                <tr><td className="px-3 py-1.5 text-emerald-700">Einzahlungen</td>{data.cashflow.months.map((m) => <td key={m.label} className="px-3 py-1.5 text-right tabular-nums text-emerald-700">{m.inflow}</td>)}</tr>
-                <tr><td className="px-3 py-1.5 text-red-600">Auszahlungen</td>{data.cashflow.months.map((m) => <td key={m.label} className="px-3 py-1.5 text-right tabular-nums text-red-600">{m.outflow}</td>)}</tr>
-                <tr className="bg-slate-50 font-semibold"><td className="px-3 py-1.5">Liquidität Ende</td>{data.cashflow.months.map((m) => <td key={m.label} className={`px-3 py-1.5 text-right tabular-nums ${m.endNegative ? "text-red-600" : ""}`}>{m.end}</td>)}</tr>
+                <tr><td className="px-3 py-1.5 text-slate-600">Liquidität Start</td>{months.map((m) => <td key={m.label} className="px-3 py-1.5 text-right tabular-nums">{m.start}</td>)}</tr>
+                <tr><td className="px-3 py-1.5 text-emerald-700">Einzahlungen</td>{months.map((m) => <td key={m.label} className="px-3 py-1.5 text-right tabular-nums text-emerald-700">{m.inflow}</td>)}</tr>
+                <tr><td className="px-3 py-1.5 text-red-600">Auszahlungen</td>{months.map((m) => <td key={m.label} className="px-3 py-1.5 text-right tabular-nums text-red-600">{m.outflow}</td>)}</tr>
+                <tr className="bg-slate-50 font-semibold"><td className="px-3 py-1.5">Liquidität Ende</td>{months.map((m) => <td key={m.label} className={`px-3 py-1.5 text-right tabular-nums ${m.endNegative ? "text-red-600" : ""}`}>{m.end}</td>)}</tr>
               </tbody>
             </table>
             <p className="px-4 pb-4 pt-2 text-[11px] text-slate-400">Kursive Monate sind Prognosewerte (Planposten + offene Posten).</p>

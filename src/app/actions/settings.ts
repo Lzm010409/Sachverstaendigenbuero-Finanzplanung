@@ -44,6 +44,38 @@ export async function savePipedriveConfig(formData: FormData) {
   revalidatePath("/settings");
 }
 
+const LOGO_MIME = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
+const LOGO_MAX_BYTES = 400 * 1024;
+
+/** Speichert Firmenname und/oder Logo (als Data-URL in den Einstellungen). */
+export async function saveBranding(formData: FormData): Promise<void> {
+  const company = String(formData.get("company") ?? "").trim();
+  await setSetting("branding.company", company); // leer = Standardname greift
+
+  const file = formData.get("logo");
+  if (file && typeof file === "object" && "arrayBuffer" in file) {
+    const f = file as File;
+    // Ungültige Dateien (falscher Typ / zu groß) still überspringen; der
+    // Firmenname wurde bereits gespeichert.
+    if (f.size > 0 && LOGO_MIME.has(f.type) && f.size <= LOGO_MAX_BYTES) {
+      const buf = Buffer.from(await f.arrayBuffer());
+      await setSetting("branding.logo", `data:${f.type};base64,${buf.toString("base64")}`);
+      await setSetting("branding.logoUpdatedAt", String(Date.now()));
+    }
+  }
+  revalidatePath("/settings");
+  revalidatePath("/report");
+  revalidatePath("/", "layout");
+}
+
+/** Entfernt das hinterlegte Logo (Firmenname bleibt erhalten). */
+export async function removeBrandingLogo() {
+  await prisma.setting.deleteMany({ where: { key: { in: ["branding.logo", "branding.logoUpdatedAt"] } } });
+  revalidatePath("/settings");
+  revalidatePath("/report");
+  revalidatePath("/", "layout");
+}
+
 /** Schaltet den Ausschluss wiederkehrender sevDesk-Belege beim Import um. */
 export async function setExcludeRecurringVouchers(formData: FormData) {
   const enabled = String(formData.get("enabled") ?? "") === "true";

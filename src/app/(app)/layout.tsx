@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { getBranding } from "@/lib/settings";
 import { logout } from "@/app/actions/auth";
 import { NavLink } from "@/components/nav-link";
 import { NavGroup } from "@/components/nav-group";
@@ -65,12 +66,18 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string; icon: s
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  const branding = await getBranding();
   return (
     <div className="flex min-h-screen">
       <ActionToaster />
       <aside className="hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white p-4 md:flex">
-        <Link href="/" className="mb-6 px-2 text-lg font-bold text-brand-fg">
-          Liquiditäts&shy;planung
+        <Link href="/" className="mb-6 flex items-center gap-2 px-2">
+          {branding.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={branding.logoUrl} alt={branding.company} className="max-h-10 max-w-full object-contain" />
+          ) : (
+            <span className="text-lg font-bold text-brand-fg">Liquiditäts&shy;planung</span>
+          )}
         </Link>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
           <NavLink href={HOME.href} icon={HOME.icon} label={HOME.label} />
@@ -85,7 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </form>
       </aside>
       <div className="min-w-0 flex-1">
-        <MobileNav home={HOME} groups={NAV_GROUPS} />
+        <MobileNav home={HOME} groups={NAV_GROUPS} logoUrl={branding.logoUrl} company={branding.company} />
         <main className="mx-auto max-w-6xl p-4 md:p-8">{children}</main>
       </div>
     </div>

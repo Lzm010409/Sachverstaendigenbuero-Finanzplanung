@@ -1,7 +1,7 @@
-import { getSettings } from "@/lib/settings";
+import { getSettings, getBranding } from "@/lib/settings";
 import { getPlanningSettings } from "@/lib/planning";
 import { prisma } from "@/lib/db";
-import { toggleIntegration, saveIntegrationToken, savePipedriveConfig } from "@/app/actions/settings";
+import { toggleIntegration, saveIntegrationToken, savePipedriveConfig, saveBranding, removeBrandingLogo } from "@/app/actions/settings";
 import { savePlanningSettings } from "@/app/actions/planning-settings";
 import { SevdeskSync } from "./sevdesk-sync";
 import { PipedriveSync } from "./pipedrive-sync";
@@ -47,6 +47,7 @@ export default async function SettingsPage() {
     "sync.dailyEnabled",
     "sync.dailyHour",
     "sync.lastDailyRun",
+    "branding.company",
   ]);
   const weeklyEnabled = s["notify.weekly"] === "true";
   const weeklyDay = Number(s["notify.weeklyDay"] ?? "1");
@@ -63,11 +64,50 @@ export default async function SettingsPage() {
   const pipeDomainSet = !!s["pipedrive.domain"] || !!process.env.PIPEDRIVE_COMPANY_DOMAIN;
   const contactCount = await prisma.contact.count();
   const plan = await getPlanningSettings();
+  const branding = await getBranding();
+  const hasLogo = !!branding.logoUrl;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">Einstellungen</h1>
       <p className="-mt-4 text-sm text-slate-500">Integrationen, Planung und Benachrichtigungen.</p>
+
+      {/* Firmenlogo & -name (Branding) */}
+      <div className="card space-y-4">
+        <div>
+          <h2 className="text-base font-semibold text-slate-800">Firmenlogo &amp; -name</h2>
+          <p className="text-sm text-slate-500">
+            Erscheint in der Seitenleiste (Website) und im Kopf der Berichte/PDFs. Empfohlen: PNG mit
+            transparentem Hintergrund, quer, max. 400&nbsp;KB.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-6">
+          <div className="flex h-20 w-52 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 p-2">
+            {hasLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={branding.logoUrl!} alt={branding.company} className="max-h-16 max-w-full object-contain" />
+            ) : (
+              <span className="text-xs text-slate-400">Kein Logo hinterlegt</span>
+            )}
+          </div>
+          {hasLogo && (
+            <form action={removeBrandingLogo} data-toast="Logo entfernt">
+              <button className="text-xs text-slate-400 hover:text-red-600">Logo entfernen</button>
+            </form>
+          )}
+        </div>
+        <form action={saveBranding} data-toast="Branding gespeichert" className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[220px] flex-1">
+            <label className="label">Firmenname</label>
+            <input name="company" defaultValue={s["branding.company"] ?? ""} className="input" placeholder={branding.company} />
+          </div>
+          <div className="min-w-[220px] flex-1">
+            <label className="label">Logo hochladen (PNG, JPG, WebP, SVG)</label>
+            <input name="logo" type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="input py-1.5" />
+          </div>
+          <button className="btn-primary" type="submit">Speichern</button>
+        </form>
+      </div>
 
       {/* Planung & Benachrichtigungen */}
       <div className="card space-y-4">

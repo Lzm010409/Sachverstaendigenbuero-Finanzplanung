@@ -13,9 +13,13 @@ import { logout } from "@/app/actions/auth";
 export function MobileNav({
   home,
   groups,
+  logoUrl,
+  company,
 }: {
   home: NavItem;
   groups: { label: string; items: NavItem[] }[];
+  logoUrl?: string | null;
+  company?: string;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -34,8 +38,13 @@ export function MobileNav({
   return (
     <>
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 md:hidden print:hidden">
-        <Link href="/" className="text-base font-bold text-brand-fg">
-          Liquiditäts&shy;planung
+        <Link href="/" className="flex items-center gap-2">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt={company ?? ""} className="max-h-8 max-w-[160px] object-contain" />
+          ) : (
+            <span className="text-base font-bold text-brand-fg">Liquiditäts&shy;planung</span>
+          )}
         </Link>
         <button
           type="button"

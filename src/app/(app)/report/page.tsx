@@ -4,6 +4,7 @@ import { getReceivablesReport } from "@/lib/receivables";
 import { getVatForecast } from "@/lib/tax";
 import { getWeeklyForecast } from "@/lib/planning";
 import { getConcentration } from "@/lib/concentration";
+import { getBranding } from "@/lib/settings";
 import { todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
 import { ReportBuilder, type ReportData } from "./report-builder";
@@ -11,13 +12,16 @@ import { ReportBuilder, type ReportData } from "./report-builder";
 export const dynamic = "force-dynamic";
 
 export default async function ReportPage() {
-  const [kpis, matrix, recv, vat, weekly, conc] = await Promise.all([
+  const [kpis, matrix, recv, vat, weekly, conc, branding] = await Promise.all([
     getDashboardKpis(),
-    getCashflowMatrix(2, 4),
+    // Bis zu 12 Monate laden; im Hochformat zeigt der Bericht ein Fenster davon,
+    // im Querformat alle Monate.
+    getCashflowMatrix(2, 9),
     getReceivablesReport(),
     getVatForecast(0, 3),
     getWeeklyForecast(13),
     getConcentration(12, 5),
+    getBranding(),
   ]);
   const today = todayUTC();
   const pct = (x: number) => `${Math.round(x * 100)} %`;
@@ -31,7 +35,8 @@ export default async function ReportPage() {
   // Alle Abschnittsdaten serverseitig in Anzeige-Strings vorformatieren, damit
   // die Client-Komponente rein darstellend bleibt (keine Date-Serialisierung).
   const data: ReportData = {
-    company: "Gollenstede Sachverstand",
+    company: branding.company,
+    logoUrl: branding.logoUrl,
     dateLabel: today.toLocaleDateString("de-DE", { day: "2-digit", month: "long", year: "numeric" }),
     kpis: kpis.map((k) => ({ id: k.id, label: k.label, value: k.value, hint: k.hint, tone: k.tone, group: k.group })),
     cashflow: {

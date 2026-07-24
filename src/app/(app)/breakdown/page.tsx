@@ -35,6 +35,13 @@ function Section({
   const sumActual = budgeted.reduce((s, r) => s + r.yearActual, 0);
   const sumPct = sumBudget > 0 ? Math.round((sumActual / sumBudget) * 100) : null;
   const sumBg = budgetCellColor(sumActual, sumBudget, isIncomeSection);
+  // Budget-Auslastung je Zeitraum: Ist der budgetierten Kategorien gegen das
+  // anteilige Perioden-Budget (Jahresbudget / Divisor: 12 Monat, 52 Woche, 1 Jahr).
+  const periodBudgetTotal = sumBudget / divisor;
+  const periodBudgetedSums = periods.map((_, i) => budgeted.reduce((s, r) => s + (r.values[i] ?? 0), 0));
+  const periodPct = periodBudgetedSums.map((v) =>
+    periodBudgetTotal > 0 ? Math.round((Math.abs(v) / periodBudgetTotal) * 100) : null,
+  );
   return (
     <>
       <tr className="bg-slate-50">
@@ -98,6 +105,14 @@ function Section({
         {periodSums.map((v, i) => (
           <td key={periods[i].key} className="td whitespace-nowrap text-right tabular-nums">
             {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
+            {periodPct[i] != null && (
+              <div
+                className={`text-[10px] font-normal ${!isIncomeSection && periodPct[i]! > 100 ? "text-red-600" : "text-slate-400"}`}
+                title={`Budget-Auslastung ${periods[i].label}: ${periodPct[i]} % des anteiligen Budgets`}
+              >
+                {periodPct[i]} % Budget
+              </div>
+            )}
           </td>
         ))}
         <td className="td whitespace-nowrap text-right tabular-nums">
@@ -202,7 +217,9 @@ export default async function BreakdownPage({
         Einnahmen umgekehrt). Budgets pflegst du unter <strong>Kategorien</strong>. Die Spalte „% Jahr"
         zeigt den Verbrauch des laufenden Kalenderjahres am Jahresbudget. Die Zeile
         <strong> „Summe Einnahmen/Ausgaben"</strong> kumuliert je Zeitraum (Ist) sowie das gesamte
-        Jahresbudget (Soll) und dessen Auslastung. Das Feld unten rechts zeigt den Jahres-Ist/Soll-Vergleich.
+        Jahresbudget (Soll) und dessen Auslastung. Der Wert <strong>„… % Budget"</strong> je Monat zeigt,
+        wie viel des <em>anteiligen</em> Gesamtbudgets (Jahresbudget ÷ 12 bzw. ÷ 52 je Woche) in diesem
+        Zeitraum verbraucht wurde. Das Feld unten rechts zeigt den Jahres-Ist/Soll-Vergleich.
       </p>
 
       {hasRows && (incPct != null || expPct != null) && (

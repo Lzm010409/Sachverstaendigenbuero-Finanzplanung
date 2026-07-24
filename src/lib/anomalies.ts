@@ -403,6 +403,26 @@ export async function getAnomalyDetail(key: string): Promise<AnomalyDetail> {
       .map((r) => ({ label: r.name, sub: `${Math.round((r.budgetPct ?? 0) * 100)} % des Jahresbudgets`, amount: r.yearActual }));
     return { title: "Kategorien über Jahresbudget", rows, pageHref: "/breakdown", pageLabel: "Zur Auswertung" };
   }
+  if (base === "budget.projected") {
+    const b = await getCategoryBreakdown("month");
+    const elapsed = b.yearElapsedFraction;
+    const rows = b.expenseRows
+      .filter((r) => r.annualBudget > 0 && !(r.budgetPct != null && r.budgetPct > 1))
+      .map((r) => ({ r, pp: elapsed > 0 ? Math.round((r.yearActual / elapsed / r.annualBudget) * 100) : 0 }))
+      .filter((x) => x.pp > 100)
+      .sort((a, c) => c.pp - a.pp)
+      .map(({ r, pp }) => ({
+        label: r.name,
+        sub: `Prognose ${pp} % · Ist ${formatCents(r.yearActual)} / Budget ${formatCents(r.annualBudget)}`,
+        amount: r.yearActual,
+        badge: `Prog. ${pp} %`,
+      }));
+    return {
+      title: "Voraussichtlich überschrittene Budgets (Hochrechnung)",
+      note: "Lineare Hochrechnung aufs Jahresende beim aktuellen Ausgabentempo (Jahres-Ist ÷ verstrichener Jahresanteil).",
+      rows, pageHref: "/breakdown", pageLabel: "Zur Auswertung",
+    };
+  }
   if (base === "tax.due") {
     const vat = await getVatForecast(0, 2);
     const rows = vat.periods.map((p) => ({ label: p.label, sub: p.isEstimate ? "Schätzung" : "fällig " + new Date(p.dueDate).toLocaleDateString("de-DE"), amount: p.vatPayable }));

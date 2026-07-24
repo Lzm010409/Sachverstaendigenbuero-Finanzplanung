@@ -225,6 +225,66 @@ export async function computeCustomKpis(defs: CustomKpiDef[], now = todayUTC()):
   return Promise.all(defs.map((d) => computeCustomKpi(d, now)));
 }
 
+export interface CustomKpiTx {
+  id: string;
+  date: string; // ISO yyyy-mm-dd
+  counterparty: string;
+  purpose: string;
+  categoryName: string | null;
+  amount: number; // signierte Cent
+}
+
+/**
+ * Liefert die Transaktionen, die in eine Kennzahl einfließen (nach Kategorie-,
+ * Zeitraum- und Metrik-Filter; Transfers ausgenommen). Für die Metriken
+ * „Einnahmen"/„Ausgaben" werden nur die beitragenden Vorzeichen gezeigt.
+ */
+export async function getCustomKpiTransactions(
+  def: CustomKpiDef,
+  now = todayUTC(),
+): Promise<{ txs: CustomKpiTx[]; total: number; count: number; from: Date; to: Date; unit: "cents" | "count"; metricLabel: string; rangeLabel: string }> {
+  const { from, to } = resolveRange(def, now);
+  const transferIds = await getTransferCategoryIds();
+  const catFilter = def.categoryIds.length ? new Set(def.categoryIds) : null;
+  const rows = await prisma.transaction.findMany({
+    where: { bookingDate: { gte: from, lt: to }, account: INCLUDED_ACCOUNT },
+    select: { id: true, bookingDate: true, counterparty: true, purpose: true, amount: true, categoryId: true, category: { select: { name: true } } },
+    orderBy: [{ bookingDate: "desc" }, { id: "desc" }],
+  });
+  let list = rows.filter(
+    (t) => !(t.categoryId && transferIds.has(t.categoryId)) && (!catFilter || (t.categoryId != null && catFilter.has(t.categoryId))),
+  );
+  if (def.metric === "income") list = list.filter((t) => t.amount > 0);
+  else if (def.metric === "expense") list = list.filter((t) => t.amount < 0);
+
+  const txs: CustomKpiTx[] = list.map((t) => ({
+    id: t.id,
+    date: t.bookingDate.toISOString().slice(0, 10),
+    counterparty: t.counterparty,
+    purpose: t.purpose,
+    categoryName: t.category?.name ?? null,
+    amount: t.amount,
+  }));
+  const total = aggregate(list.map((t) => ({ amount: t.amount, categoryId: t.categoryId, bookingDate: t.bookingDate })), def.metric);
+  return {
+    txs, total, count: list.length, from, to,
+    unit: def.metric === "count" ? "count" : "cents",
+    metricLabel: METRIC_LABEL[def.metric], rangeLabel: RANGE_LABEL[def.rangeKind],
+  };
+}
+
+/** Einzelne Definition laden (oder null). */
+export async function getCustomKpiDef(id: string): Promise<CustomKpiDef | null> {
+  const r = await prisma.customKpi.findUnique({ where: { id } });
+  if (!r) return null;
+  return {
+    id: r.id, name: r.name, metric: r.metric as Metric, categoryIds: r.categoryIds,
+    rangeKind: r.rangeKind as RangeKind, customFrom: r.customFrom, customTo: r.customTo,
+    display: r.display as Display, groupBy: r.groupBy as GroupBy, size: r.size as TileSize,
+    compare: r.compare, showOnDashboard: r.showOnDashboard, showOnReport: r.showOnReport, sortOrder: r.sortOrder,
+  };
+}
+
 /** Lädt alle Definitionen (Prisma-Row -> Def). */
 export async function getCustomKpiDefs(where?: { showOnDashboard?: boolean; showOnReport?: boolean }): Promise<CustomKpiDef[]> {
   const rows = await prisma.customKpi.findMany({ where, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });

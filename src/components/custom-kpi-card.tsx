@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import {
   Bar,
   BarChart,
@@ -44,10 +45,12 @@ export function CustomKpiCard({
   result,
   className = "",
   embedded = false,
+  detailHref,
 }: {
   result: CustomKpiResult;
   className?: string;
   embedded?: boolean;
+  detailHref?: string;
 }) {
   const span = SPAN[result.size] ?? SPAN.md;
   const inner = (
@@ -149,6 +152,11 @@ export function CustomKpiCard({
             </div>
           )}
         </div>
+      )}
+      {detailHref && (
+        <Link href={detailHref} className="mt-2 inline-block text-[11px] text-brand hover:underline print:hidden">
+          Transaktionen anzeigen →
+        </Link>
       )}
     </>
   );

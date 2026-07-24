@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { CustomKpiCard, spanClass } from "@/components/custom-kpi-card";
 import type { CustomKpiResult } from "@/lib/custom-kpi";
 import type { CatOpt } from "@/components/category-select";
@@ -54,6 +55,7 @@ export function KpiItem({
             {initial.showOnReport ? "✓ Bericht" : "Bericht"}
           </button>
         </form>
+        <Link href={`/custom-kpis/${initial.id}`} className="text-slate-400 hover:text-brand">Transaktionen</Link>
         <button className="text-slate-400 hover:text-brand" onClick={() => setEditing(true)}>Bearbeiten</button>
         <form action={deleteCustomKpi} data-toast="Kennzahl gelöscht" className="ml-auto">
           <input type="hidden" name="id" value={initial.id} />

@@ -123,7 +123,7 @@ export default async function DashboardPage({
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {customResults.map((r) => (
-              <CustomKpiCard key={r.id} result={r} />
+              <CustomKpiCard key={r.id} result={r} detailHref={`/custom-kpis/${r.id}`} />
             ))}
           </div>
         </div>

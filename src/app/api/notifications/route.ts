@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { auth } from "@/auth";
 import { buildDigest, digestToHtml, sendDigestEmail } from "@/lib/notifications";
+import { getBranding } from "@/lib/settings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -38,7 +39,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ digest, mail });
   }
   if (req.nextUrl.searchParams.get("format") === "html") {
-    return new Response(digestToHtml(digest), { headers: { "Content-Type": "text/html; charset=utf-8" } });
+    // Vorschau im Browser: Logo über die absolute Website-URL einbetten.
+    const branding = await getBranding();
+    const appUrl = process.env.APP_URL || "https://finance.gollenstede.app";
+    const logoSrc = branding.logoUrl ? `${appUrl}${branding.logoUrl}` : null;
+    return new Response(digestToHtml(digest, { company: branding.company, logoSrc }), {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
   }
   return NextResponse.json({ digest });
 }

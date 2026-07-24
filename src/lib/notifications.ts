@@ -1,6 +1,7 @@
 import { getForecast, getTotalBalanceCents } from "./queries";
 import { getKpis } from "./analytics";
 import { getPlanningSettings, getWeeklyForecast } from "./planning";
+import { getBranding, getBrandingLogoBytes } from "./settings";
 import { getReceivablesReport, type AgingBucket } from "./receivables";
 import { getVatForecast } from "./tax";
 import { getAllAnomalies } from "./anomalies";
@@ -105,8 +106,12 @@ const COLOR: Record<AlertLevel, string> = { info: "#007FFF", warn: "#b45309", cr
 const de = (c: number) => formatCents(c);
 const deDate = (iso: string) => new Date(iso).toLocaleDateString("de-DE");
 
-export function digestToHtml(d: Digest): string {
+export function digestToHtml(d: Digest, brand?: { logoSrc?: string | null; company?: string }): string {
   const appUrl = process.env.APP_URL || "https://finance.gollenstede.app";
+  const company = brand?.company || "Gollenstede Sachverstand";
+  const logo = brand?.logoSrc
+    ? `<td align="right" valign="top" style="padding-left:12px"><img src="${brand.logoSrc}" alt="${company}" style="max-height:48px;max-width:200px;object-fit:contain"></td>`
+    : "";
   const alertRows = d.alerts
     .map(
       (a) =>
@@ -131,8 +136,13 @@ export function digestToHtml(d: Digest): string {
   const belowThreshold = d.minThreshold > 0 && d.weekLowest.balance < d.minThreshold;
 
   return `<div style="font-family:system-ui,-apple-system,sans-serif;max-width:640px;margin:0 auto;color:#0f172a">
-    <h2 style="margin:0">Wöchentlicher Liquiditätsbericht</h2>
-    <p style="color:#64748b;margin:4px 0 12px">Gollenstede Sachverstand · Stand ${new Date(d.generatedAt).toLocaleDateString("de-DE")}</p>
+    <table style="width:100%;border-collapse:collapse;margin-bottom:12px"><tr>
+      <td valign="top">
+        <h2 style="margin:0">Wöchentlicher Liquiditätsbericht</h2>
+        <p style="color:#64748b;margin:4px 0 0">${company} · Stand ${new Date(d.generatedAt).toLocaleDateString("de-DE")}</p>
+      </td>
+      ${logo}
+    </tr></table>
     <div style="background:#007FFF;color:#fff;border-radius:10px;padding:16px 18px;margin-bottom:8px">
       <div style="font-size:12px;text-transform:uppercase;opacity:.85">Verfügbare Liquidität</div>
       <div style="font-size:26px;font-weight:700">${de(d.balance)}</div>
@@ -199,11 +209,27 @@ export async function sendDigestEmail(d: Digest): Promise<MailResult> {
       auth: { user, pass },
     });
     const hasCritical = d.alerts.some((a) => a.level === "critical");
+
+    // Logo als CID-Anhang einbetten (zuverlässiger als externe Bild-URLs, die
+    // viele Clients standardmäßig blockieren). SVG überspringen – in E-Mails
+    // meist nicht darstellbar. Firmenname immer in die Kopfzeile übernehmen.
+    const branding = await getBranding();
+    const logo = await getBrandingLogoBytes();
+    const useCid = logo && logo.mime !== "image/svg+xml";
+    const attachments = useCid
+      ? [{ filename: "logo", content: logo!.buffer, cid: "brandlogo", contentType: logo!.mime }]
+      : undefined;
+    const html = digestToHtml(d, {
+      company: branding.company,
+      logoSrc: useCid ? "cid:brandlogo" : null,
+    });
+
     await transport.sendMail({
       from,
       to,
       subject: `${hasCritical ? "⚠ " : ""}Liquiditätsbericht — ${formatCents(d.balance)} verfügbar`,
-      html: digestToHtml(d),
+      html,
+      attachments,
     });
     return { attempted: true, sent: true };
   } catch (e) {

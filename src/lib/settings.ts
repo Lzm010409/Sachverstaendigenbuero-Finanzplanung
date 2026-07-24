@@ -50,6 +50,15 @@ export interface Branding {
 
 export const DEFAULT_COMPANY = "Gollenstede Sachverstand";
 
+/** Rohbytes des Logos (für E-Mail-CID-Einbettung und serverseitige Nutzung).
+ *  SVG wird zurückgegeben, ist in vielen E-Mail-Clients aber nicht darstellbar. */
+export async function getBrandingLogoBytes(): Promise<{ mime: string; buffer: Buffer } | null> {
+  const dataUrl = await getSetting("branding.logo");
+  const m = dataUrl ? /^data:([^;]+);base64,(.*)$/s.exec(dataUrl) : null;
+  if (!m) return null;
+  return { mime: m[1], buffer: Buffer.from(m[2], "base64") };
+}
+
 /** Logo + Firmenname für Website und Berichte. Logo wird als eigene Route
  *  ausgeliefert (schlankes HTML, cachefähig), Version über logoUpdatedAt. */
 export async function getBranding(): Promise<Branding> {

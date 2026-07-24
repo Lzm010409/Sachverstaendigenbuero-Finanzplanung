@@ -22,6 +22,20 @@ export interface ReportData {
   vat: { periods: { label: string; payable: string; estimate: boolean }[]; next: { payable: string; date: string; label: string } | null };
   concentration: { debtors: { name: string; revenue: string; share: string }[]; hhi: number; top1: string; top3: string; total: string };
   custom: CustomKpiResult[];
+  budget: {
+    showProjection: boolean;
+    income: BudgetGroup;
+    expense: BudgetGroup;
+  } | null;
+}
+
+interface BudgetGroup {
+  rows: { name: string; actual: string; budget: string; pct: string; proj: string | null; breach: boolean }[];
+  sumActual: string;
+  sumBudget: string;
+  sumPct: string;
+  sumProj: string | null;
+  sumBreach: boolean;
 }
 
 // Reihenfolge der KPI-Gruppen in der Konfiguration und im Bericht.
@@ -35,10 +49,11 @@ const GROUP_ORDER = [
   "Weitere",
 ];
 
-type SectionId = "cashflow" | "weekly" | "receivables" | "vat" | "concentration" | "custom";
+type SectionId = "cashflow" | "weekly" | "budget" | "receivables" | "vat" | "concentration" | "custom";
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "cashflow", label: "Liquiditätsverlauf (Monatsmatrix)" },
   { id: "weekly", label: "13-Wochen-Liquiditätsprognose" },
+  { id: "budget", label: "Budget-Auslastung & Prognose" },
   { id: "receivables", label: "Forderungen (Aging + DSO)" },
   { id: "vat", label: "Steuer-/USt-Vorschau" },
   { id: "concentration", label: "Klumpenrisiko (Top-Debitoren)" },
@@ -59,7 +74,7 @@ const PRESETS: Record<string, Preset> = {
     name: "Komplettbericht",
     subtitle: "Alle Kennzahlen und Auswertungen",
     kpis: ["balance", "income3m", "expense3m", "netMonthly", "runway", "workingCapital", "budgetIncome", "budgetExpense", "openReceivables", "overdueReceivables", "dso", "openPayables", "forecast30", "forecast90", "lowPoint13w", "minBuffer", "vatNext", "topDebtor"],
-    sections: ["cashflow", "weekly", "receivables", "vat", "concentration", "custom"],
+    sections: ["cashflow", "weekly", "budget", "receivables", "vat", "concentration", "custom"],
   },
   liquidity: {
     name: "Liquidität & Prognose",
@@ -400,6 +415,62 @@ export function ReportBuilder({ data }: { data: ReportData }) {
               </tbody>
             </table>
             <p className="px-4 pb-4 pt-2 text-[11px] text-slate-400">Gelb hinterlegte Wochen unterschreiten den Mindestbestand.</p>
+          </section>
+        )}
+
+        {secSel.has("budget") && data.budget && (
+          <section className="report-section card overflow-x-auto">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">
+              Budget-Auslastung (Jahr){data.budget.showProjection ? " inkl. Prognose" : ""}
+            </h2>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
+                  <th className="py-2 text-left">Kategorie</th>
+                  <th className="py-2 text-right">Ist (Jahr)</th>
+                  <th className="py-2 text-right">Jahresbudget</th>
+                  <th className="py-2 text-right">%</th>
+                  {data.budget.showProjection && <th className="py-2 text-right">Prognose</th>}
+                </tr>
+              </thead>
+              {([
+                { title: "Einnahmen", g: data.budget.income },
+                { title: "Ausgaben", g: data.budget.expense },
+              ] as const).map(({ title, g }) =>
+                g.rows.length === 0 ? null : (
+                  <tbody key={title}>
+                    <tr className="bg-slate-50"><td colSpan={data.budget!.showProjection ? 5 : 4} className="py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</td></tr>
+                    {g.rows.map((r) => (
+                      <tr key={r.name} className="border-b border-slate-50">
+                        <td className="py-1 font-medium">{r.name}</td>
+                        <td className="py-1 text-right tabular-nums">{r.actual}</td>
+                        <td className="py-1 text-right tabular-nums text-slate-500">{r.budget}</td>
+                        <td className="py-1 text-right tabular-nums">{r.pct}</td>
+                        {data.budget!.showProjection && (
+                          <td className={`py-1 text-right tabular-nums ${r.breach ? "font-semibold text-red-600" : "text-slate-500"}`}>
+                            {r.breach ? "⚠ " : ""}{r.proj ?? "–"}
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                    <tr className="border-t border-slate-200 font-semibold">
+                      <td className="py-1">Summe {title}</td>
+                      <td className="py-1 text-right tabular-nums">{g.sumActual}</td>
+                      <td className="py-1 text-right tabular-nums">{g.sumBudget}</td>
+                      <td className="py-1 text-right tabular-nums">{g.sumPct}</td>
+                      {data.budget!.showProjection && (
+                        <td className={`py-1 text-right tabular-nums ${g.sumBreach ? "font-semibold text-red-600" : ""}`}>
+                          {g.sumBreach ? "⚠ " : ""}{g.sumProj ?? "–"}
+                        </td>
+                      )}
+                    </tr>
+                  </tbody>
+                ),
+              )}
+            </table>
+            {data.budget.showProjection && (
+              <p className="mt-2 text-[11px] text-slate-400">Prognose = lineare Hochrechnung aufs Jahresende (Jahres-Ist ÷ verstrichener Jahresanteil). ⚠ = Ausgabenbudget wird voraussichtlich überschritten.</p>
+            )}
           </section>
         )}
 

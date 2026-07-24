@@ -258,6 +258,25 @@ async function budgetAnomalies(): Promise<Anomaly[]> {
       href: "/breakdown",
     });
   }
+
+  // Hochrechnung aufs Jahresende: Ausgaben-Kategorien, die beim aktuellen Tempo
+  // das Budget voraussichtlich reißen (aber noch nicht drüber sind).
+  const elapsed = b.yearElapsedFraction;
+  if (elapsed > 0.05 && elapsed < 0.995) {
+    const proj = b.expenseRows
+      .filter((r) => r.annualBudget > 0 && !(r.budgetPct != null && r.budgetPct > 1))
+      .map((r) => ({ name: r.name, pp: Math.round((r.yearActual / elapsed / r.annualBudget) * 100) }))
+      .filter((x) => x.pp > 100)
+      .sort((a, c) => c.pp - a.pp);
+    if (proj.length > 0) {
+      out.push({
+        level: "warn", page: "/breakdown", key: "budget.projected",
+        title: "Budget wird voraussichtlich überschritten",
+        detail: `Hochgerechnet reißen ${proj.length} Ausgaben-Kategorie(n) das Jahresbudget, am stärksten „${proj[0].name}" (Prognose ${proj[0].pp} %).`,
+        href: "/breakdown",
+      });
+    }
+  }
   return out;
 }
 
@@ -269,7 +288,7 @@ const ALL_DETECTORS = [
 ];
 
 const PAGE_DETECTORS: Record<string, (() => Promise<Anomaly[]>)[]> = {
-  "/": [forecastAnomalies, receivableAnomalies, taxAnomalies],
+  "/": [forecastAnomalies, receivableAnomalies, taxAnomalies, budgetAnomalies],
   "/forecast": [forecastAnomalies],
   "/receivables": [receivableAnomalies],
   "/open-items": [receivableAnomalies],

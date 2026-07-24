@@ -1,4 +1,4 @@
-import { getCashflowMatrix } from "@/lib/analytics";
+import { getCashflowMatrix, getCategoryBreakdown, type BreakdownRow } from "@/lib/analytics";
 import { getDashboardKpis } from "@/lib/dashboard-kpis";
 import { getReceivablesReport } from "@/lib/receivables";
 import { getVatForecast } from "@/lib/tax";
@@ -26,6 +26,43 @@ export default async function ReportPage() {
     getCustomKpiDefs({ showOnReport: true }),
   ]);
   const custom = customDefs.length ? await computeCustomKpis(customDefs) : [];
+
+  // Budget-Auslastung (Jahr) inkl. linearer Hochrechnung aufs Jahresende.
+  const bd = await getCategoryBreakdown("month");
+  const elapsed = bd.yearElapsedFraction;
+  const showProj = elapsed > 0.02 && elapsed < 0.995;
+  const buildBudget = (rows: BreakdownRow[], isIncome: boolean) => {
+    const budgeted = rows.filter((r) => r.annualBudget > 0);
+    const brows = budgeted.map((r) => {
+      const projPct = showProj ? Math.round((r.yearActual / elapsed / r.annualBudget) * 100) : null;
+      return {
+        name: r.name,
+        actual: formatCents(isIncome ? r.yearActual : -r.yearActual),
+        budget: formatCents(isIncome ? r.annualBudget : -r.annualBudget),
+        pct: r.budgetPct != null ? `${Math.round(r.budgetPct * 100)} %` : "–",
+        proj: projPct != null ? `${projPct} %` : null,
+        breach: !isIncome && projPct != null && projPct > 100,
+      };
+    });
+    const sumBudget = budgeted.reduce((s, r) => s + r.annualBudget, 0);
+    const sumActual = budgeted.reduce((s, r) => s + r.yearActual, 0);
+    const sumPctN = sumBudget > 0 ? Math.round((sumActual / sumBudget) * 100) : null;
+    const sumProjN = showProj && sumBudget > 0 ? Math.round((sumActual / elapsed / sumBudget) * 100) : null;
+    return {
+      rows: brows,
+      sumActual: formatCents(isIncome ? sumActual : -sumActual),
+      sumBudget: formatCents(isIncome ? sumBudget : -sumBudget),
+      sumPct: sumPctN != null ? `${sumPctN} %` : "–",
+      sumProj: sumProjN != null ? `${sumProjN} %` : null,
+      sumBreach: !isIncome && sumProjN != null && sumProjN > 100,
+    };
+  };
+  const budget = {
+    showProjection: showProj,
+    income: buildBudget(bd.incomeRows, true),
+    expense: buildBudget(bd.expenseRows, false),
+  };
+  const hasBudget = budget.income.rows.length > 0 || budget.expense.rows.length > 0;
   const today = todayUTC();
   const pct = (x: number) => `${Math.round(x * 100)} %`;
 
@@ -84,6 +121,7 @@ export default async function ReportPage() {
       total: formatCents(conc.totalRevenue),
     },
     custom,
+    budget: hasBudget ? budget : null,
   };
 
   return <ReportBuilder data={data} />;

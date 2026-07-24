@@ -7,6 +7,8 @@ import { formatCents } from "@/lib/money";
 import { CashflowChart } from "@/components/cashflow-chart";
 import { BudgetStatusCard } from "@/components/budget-status-card";
 import { KpiGrid } from "@/components/kpi-grid";
+import { CustomKpiCard } from "@/components/custom-kpi-card";
+import { getCustomKpiDefs, computeCustomKpis } from "@/lib/custom-kpi";
 import { PivotSections } from "./pivot-sections";
 
 export const dynamic = "force-dynamic";
@@ -66,6 +68,10 @@ export default async function DashboardPage({
   ]);
   const { months } = matrix;
 
+  // Eigene Kennzahlen, die für die Übersicht markiert sind.
+  const customDefs = await getCustomKpiDefs({ showOnDashboard: true });
+  const customResults = customDefs.length ? await computeCustomKpis(customDefs) : [];
+
   // Budget-Monats-Navigation (behält den Cashflow-Offset bei).
   const bmQs = (o: number) => {
     const p = new URLSearchParams();
@@ -108,6 +114,20 @@ export default async function DashboardPage({
       </div>
 
       <KpiGrid kpis={kpiList} defaultIds={DEFAULT_KPI_IDS} />
+
+      {customResults.length > 0 && (
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700">Eigene Kennzahlen</h2>
+            <Link href="/custom-kpis" className="text-xs text-brand hover:underline">verwalten →</Link>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {customResults.map((r) => (
+              <CustomKpiCard key={r.id} result={r} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {warnNegative && lowestFuture && (
         <div className="card flex items-start gap-3 border-red-200 bg-red-50">

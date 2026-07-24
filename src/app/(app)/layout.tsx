@@ -44,6 +44,7 @@ const NAV_GROUPS: { label: string; items: { href: string; label: string; icon: s
     label: "Auswertung & Berichte",
     items: [
       { href: "/breakdown", label: "Auswertung", icon: "📈" },
+      { href: "/custom-kpis", label: "Eigene Kennzahlen", icon: "🧩" },
       { href: "/plan-actual", label: "Plan/Ist", icon: "📐" },
       { href: "/plan-check", label: "Planungs-Check", icon: "🧷" },
       { href: "/tax", label: "Steuer-Vorschau", icon: "🧮" },

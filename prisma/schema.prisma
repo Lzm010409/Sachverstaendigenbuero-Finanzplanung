@@ -343,3 +343,25 @@ model ScenarioCategoryAdjustment {
 
   @@unique([scenarioId, categoryId])
 }
+
+// Benutzerdefinierte Kennzahl/Widget: kombiniert eine Metrik über gefilterte
+// Umsätze mit einem Zeitraum und einer Darstellungsart (Zahl/Balken/Linie/Kreis).
+model CustomKpi {
+  id              String   @id @default(cuid())
+  name            String
+  metric          String   @default("net")     // net|income|expense|volume|count|avg
+  categoryIds     String[]                      // leer = alle Kategorien
+  rangeKind       String   @default("ytd")      // mtd|last_month|ytd|last_year|last_30d|last_90d|rolling_12m|custom
+  customFrom      DateTime?
+  customTo        DateTime?
+  display         String   @default("number")   // number|bar|line|pie
+  groupBy         String   @default("none")     // none|month|week|category
+  size            String   @default("md")       // sm|md|lg|xl (Kachelgröße)
+  compare         Boolean  @default(false)      // Vergleich zur Vorperiode (nur Zahl)
+  showOnDashboard Boolean  @default(false)
+  showOnReport    Boolean  @default(false)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([sortOrder])
+}

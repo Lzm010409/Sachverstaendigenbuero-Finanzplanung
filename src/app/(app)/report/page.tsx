@@ -5,6 +5,7 @@ import { getVatForecast } from "@/lib/tax";
 import { getWeeklyForecast } from "@/lib/planning";
 import { getConcentration } from "@/lib/concentration";
 import { getBranding } from "@/lib/settings";
+import { getCustomKpiDefs, computeCustomKpis } from "@/lib/custom-kpi";
 import { todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
 import { ReportBuilder, type ReportData } from "./report-builder";
@@ -12,7 +13,7 @@ import { ReportBuilder, type ReportData } from "./report-builder";
 export const dynamic = "force-dynamic";
 
 export default async function ReportPage() {
-  const [kpis, matrix, recv, vat, weekly, conc, branding] = await Promise.all([
+  const [kpis, matrix, recv, vat, weekly, conc, branding, customDefs] = await Promise.all([
     getDashboardKpis(),
     // Bis zu 12 Monate laden; im Hochformat zeigt der Bericht ein Fenster davon,
     // im Querformat alle Monate.
@@ -22,7 +23,9 @@ export default async function ReportPage() {
     getWeeklyForecast(13),
     getConcentration(12, 5),
     getBranding(),
+    getCustomKpiDefs({ showOnReport: true }),
   ]);
+  const custom = customDefs.length ? await computeCustomKpis(customDefs) : [];
   const today = todayUTC();
   const pct = (x: number) => `${Math.round(x * 100)} %`;
 
@@ -80,6 +83,7 @@ export default async function ReportPage() {
       top3: conc.debtors.length ? pct(conc.top3Share) : "–",
       total: formatCents(conc.totalRevenue),
     },
+    custom,
   };
 
   return <ReportBuilder data={data} />;

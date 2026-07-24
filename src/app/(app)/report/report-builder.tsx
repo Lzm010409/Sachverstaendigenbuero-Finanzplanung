@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CustomKpiCard } from "@/components/custom-kpi-card";
+import type { CustomKpiResult } from "@/lib/custom-kpi";
 
 export type ReportTone = "default" | "positive" | "negative" | "warning";
 
@@ -19,6 +21,7 @@ export interface ReportData {
   receivables: { buckets: { label: string; amount: string; count: number }[]; totalOpen: string; overdueOpen: string; dso: string };
   vat: { periods: { label: string; payable: string; estimate: boolean }[]; next: { payable: string; date: string; label: string } | null };
   concentration: { debtors: { name: string; revenue: string; share: string }[]; hhi: number; top1: string; top3: string; total: string };
+  custom: CustomKpiResult[];
 }
 
 // Reihenfolge der KPI-Gruppen in der Konfiguration und im Bericht.
@@ -32,13 +35,14 @@ const GROUP_ORDER = [
   "Weitere",
 ];
 
-type SectionId = "cashflow" | "weekly" | "receivables" | "vat" | "concentration";
+type SectionId = "cashflow" | "weekly" | "receivables" | "vat" | "concentration" | "custom";
 const SECTIONS: { id: SectionId; label: string }[] = [
   { id: "cashflow", label: "Liquiditätsverlauf (Monatsmatrix)" },
   { id: "weekly", label: "13-Wochen-Liquiditätsprognose" },
   { id: "receivables", label: "Forderungen (Aging + DSO)" },
   { id: "vat", label: "Steuer-/USt-Vorschau" },
   { id: "concentration", label: "Klumpenrisiko (Top-Debitoren)" },
+  { id: "custom", label: "Eigene Kennzahlen" },
 ];
 
 interface Preset {
@@ -55,7 +59,7 @@ const PRESETS: Record<string, Preset> = {
     name: "Komplettbericht",
     subtitle: "Alle Kennzahlen und Auswertungen",
     kpis: ["balance", "income3m", "expense3m", "netMonthly", "runway", "workingCapital", "budgetIncome", "budgetExpense", "openReceivables", "overdueReceivables", "dso", "openPayables", "forecast30", "forecast90", "lowPoint13w", "minBuffer", "vatNext", "topDebtor"],
-    sections: ["cashflow", "weekly", "receivables", "vat", "concentration"],
+    sections: ["cashflow", "weekly", "receivables", "vat", "concentration", "custom"],
   },
   liquidity: {
     name: "Liquidität & Prognose",
@@ -469,6 +473,17 @@ export function ReportBuilder({ data }: { data: ReportData }) {
                 </tbody>
               </table>
             )}
+          </section>
+        )}
+
+        {secSel.has("custom") && data.custom.length > 0 && (
+          <section className="report-section">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-600">Eigene Kennzahlen</h2>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {data.custom.map((r) => (
+                <CustomKpiCard key={r.id} result={r} />
+              ))}
+            </div>
           </section>
         )}
 

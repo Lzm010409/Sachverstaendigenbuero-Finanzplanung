@@ -1,6 +1,6 @@
 import { prisma } from "./db";
 import { addDays, addMonths, isoDate, startOfDayUTC, todayUTC } from "./dates";
-import { getTotalBalanceCents, getTransferCategoryIds, INCLUDED_ACCOUNT } from "./queries";
+import { getScenarioConfig, getTotalBalanceCents, getTransferCategoryIds, INCLUDED_ACCOUNT } from "./queries";
 import { getBudgetAnnualByCategory, getForecastBudgetItems } from "./budgets";
 import { budgetAnnualCents, isBudgetActiveOn } from "./budget";
 
@@ -282,9 +282,11 @@ export async function getCashflowMatrix(
   monthsBack = 6,
   monthsForward = 6,
   monthOffset = 0, // 0 = aktuell; > 0 verschiebt das Fenster um n Monate zurück
+  scenarioId?: string, // optional: Szenario-Faktoren auf die Zukunft anwenden
 ): Promise<CashflowMatrix> {
   const { occurrencesBetween } = await import("./recurrence");
   const today = todayUTC();
+  const scenario = await getScenarioConfig(scenarioId);
   const back = Math.max(0, Math.floor(monthOffset));
   const curMonthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
   // Fenstermitte um `back` Monate in die Vergangenheit verschieben.
@@ -368,6 +370,21 @@ export async function getCashflowMatrix(
       amount: oi.kind === "RECEIVABLE" ? remaining : -remaining,
       categoryId: oi.categoryId,
     });
+  }
+
+  // Szenario-Faktoren nur auf die ZUKUNFT (geplante Bewegungen) anwenden –
+  // gebuchte Umsätze der Vergangenheit bleiben unverändert. Zuflüsse werden
+  // zusätzlich um inflowShiftDays nach hinten verschoben.
+  if (scenario) {
+    for (const ev of futureEvents) {
+      const adj = ev.categoryId ? scenario.categoryFactors?.[ev.categoryId] : undefined;
+      if (ev.amount >= 0) {
+        ev.amount = Math.round(ev.amount * (adj ?? scenario.inflowFactor));
+        if (scenario.inflowShiftDays) ev.date = addDays(ev.date, scenario.inflowShiftDays);
+      } else {
+        ev.amount = Math.round(ev.amount * (adj ?? scenario.outflowFactor));
+      }
+    }
   }
 
   // Aggregation je Kategorie × Monat + Zu-/Abflüsse je Monat.

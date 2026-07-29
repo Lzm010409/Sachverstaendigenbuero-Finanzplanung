@@ -1,10 +1,11 @@
-import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { getSetting } from "@/lib/settings";
 import { CategoryOptions } from "@/components/category-select";
 import {
   deleteScenario,
   deleteScenarioAdjustment,
   setScenarioAdjustment,
+  toggleActiveScenario,
 } from "@/app/actions/scenarios";
 import { ScenarioForm } from "./scenario-form";
 
@@ -17,7 +18,7 @@ function pct(factor: number): string {
 }
 
 export default async function ScenariosPage() {
-  const [scenarios, categories] = await Promise.all([
+  const [scenarios, categories, activeId] = await Promise.all([
     prisma.scenario.findMany({
       orderBy: { createdAt: "asc" },
       include: {
@@ -25,6 +26,7 @@ export default async function ScenariosPage() {
       },
     }),
     prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
+    getSetting("scenario.activeId"),
   ]);
 
   return (
@@ -32,7 +34,8 @@ export default async function ScenariosPage() {
       <h1 className="text-2xl font-bold text-slate-900">Szenarien</h1>
       <p className="-mt-4 text-sm text-slate-500">
         Globale Faktoren auf Ein-/Auszahlungen und Zahlungsverzug – zusätzlich pro Kategorie fein
-        justierbar. Ein Szenario lässt sich in der Übersicht auf die Liquiditätskurve anwenden.
+        justierbar. „Auf Übersicht anwenden" merkt sich das Szenario dauerhaft und passt Prognose,
+        Liquiditätsverlauf und 13-Wochen-Werte an – jederzeit wieder abschaltbar.
       </p>
 
       <div className="card">
@@ -43,20 +46,28 @@ export default async function ScenariosPage() {
       {scenarios.length === 0 ? (
         <div className="card text-sm text-slate-400">Noch keine Szenarien.</div>
       ) : (
-        scenarios.map((s) => (
-          <div key={s.id} className="card space-y-4">
+        scenarios.map((s) => {
+          const isActive = activeId === s.id;
+          return (
+          <div key={s.id} className={`card space-y-4 ${isActive ? "ring-2 ring-brand/40" : ""}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h3 className="text-base font-semibold text-slate-800">{s.name}</h3>
+                <h3 className="flex items-center gap-2 text-base font-semibold text-slate-800">
+                  {s.name}
+                  {isActive && <span className="badge bg-brand/10 text-brand">aktiv auf Übersicht</span>}
+                </h3>
                 <p className="text-xs text-slate-500">
                   Zuflüsse {pct(s.inflowFactor)} · Abflüsse {pct(s.outflowFactor)} · Verzug{" "}
                   {s.inflowShiftDays} Tage
                 </p>
               </div>
               <div className="flex items-center gap-3">
-                <Link href={`/?s=${s.id}`} className="text-xs font-medium text-brand hover:underline">
-                  auf Übersicht anwenden →
-                </Link>
+                <form action={toggleActiveScenario} data-toast={isActive ? "Szenario entfernt" : "Szenario angewendet"}>
+                  <input type="hidden" name="id" value={s.id} />
+                  <button className={`text-xs font-medium ${isActive ? "text-slate-500 hover:text-red-600" : "text-brand hover:underline"}`}>
+                    {isActive ? "von Übersicht entfernen" : "auf Übersicht anwenden →"}
+                  </button>
+                </form>
                 <form action={deleteScenario}>
                   <input type="hidden" name="id" value={s.id} />
                   <button className="text-xs text-slate-400 hover:text-red-600">Szenario löschen</button>
@@ -116,7 +127,8 @@ export default async function ScenariosPage() {
               )}
             </div>
           </div>
-        ))
+          );
+        })
       )}
     </div>
   );

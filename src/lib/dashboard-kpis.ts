@@ -30,7 +30,7 @@ const days = (n: number | null) => (n == null ? "–" : `${n} Tage`);
 
 // Liefert ALLE verfügbaren Dashboard-KPIs (aggregiert). Die Sichtbarkeit steuert
 // der Client (localStorage); hier wird immer der volle Satz berechnet.
-export async function getDashboardKpis(): Promise<KpiDescriptor[]> {
+export async function getDashboardKpis(scenarioId?: string): Promise<KpiDescriptor[]> {
   const today = todayUTC();
   const curStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
   const prevStart = addMonths(curStart, -1);
@@ -39,9 +39,9 @@ export async function getDashboardKpis(): Promise<KpiDescriptor[]> {
   const [kpis, rec, weekly, fc30, fc90, planning, conc, vat, transferIds, monthTx, payables, budgetUtil] = await Promise.all([
     getKpis(),
     getReceivablesReport(),
-    getWeeklyForecast(13),
-    getForecast(30),
-    getForecast(90),
+    getWeeklyForecast(13, scenarioId),
+    getForecast(30, scenarioId),
+    getForecast(90, scenarioId),
     getPlanningSettings(),
     getConcentration(12, 3),
     getVatForecast(1, 3),

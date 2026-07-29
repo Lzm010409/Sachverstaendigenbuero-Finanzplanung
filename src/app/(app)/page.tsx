@@ -1,8 +1,11 @@
 import Link from "next/link";
+import { prisma } from "@/lib/db";
 import { getBudgetStatus, getCashflowMatrix, type CashflowMonth } from "@/lib/analytics";
 import { getForecast } from "@/lib/queries";
 import { getDashboardKpis, DEFAULT_KPI_IDS } from "@/lib/dashboard-kpis";
 import { getPlanningSettings, findThresholdBreach } from "@/lib/planning";
+import { getSetting } from "@/lib/settings";
+import { clearActiveScenario } from "@/app/actions/scenarios";
 import { formatCents } from "@/lib/money";
 import { CashflowChart } from "@/components/cashflow-chart";
 import { BudgetStatusCard } from "@/components/budget-status-card";
@@ -54,17 +57,21 @@ function SummaryRow({
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ offset?: string; bm?: string }>;
+  searchParams: Promise<{ offset?: string; bm?: string; s?: string }>;
 }) {
   const sp = await searchParams;
   const offset = Math.max(0, Number(sp.offset) || 0);
   const bm = Math.min(0, Math.max(-24, Number(sp.bm) || 0)); // Budget-Monat (0 = aktuell, negativ = zurück)
-  const [kpiList, matrix, forecast, planning, budgetStatus] = await Promise.all([
-    getDashboardKpis(),
-    getCashflowMatrix(6, 6, offset),
-    getForecast(180),
+  // Aktives Szenario: ?s= (Vorschau) hat Vorrang, sonst das persistierte.
+  const activeSetting = (await getSetting("scenario.activeId")) || undefined;
+  const scenarioId = sp.s || activeSetting || undefined;
+  const [kpiList, matrix, forecast, planning, budgetStatus, activeScenario] = await Promise.all([
+    getDashboardKpis(scenarioId),
+    getCashflowMatrix(6, 6, offset, scenarioId),
+    getForecast(180, scenarioId),
     getPlanningSettings(),
     getBudgetStatus(bm),
+    scenarioId ? prisma.scenario.findUnique({ where: { id: scenarioId }, select: { id: true, name: true } }) : Promise.resolve(null),
   ]);
   const { months } = matrix;
 
@@ -112,6 +119,19 @@ export default async function DashboardPage({
           </Link>
         </div>
       </div>
+
+      {activeScenario && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 border-brand/30 bg-brand/5">
+          <div className="text-sm text-slate-700">
+            <span className="mr-2">🎚️</span>
+            Szenario <strong>„{activeScenario.name}"</strong> ist angewendet – Prognose, Liquiditätsverlauf
+            und 13-Wochen-Werte sind entsprechend angepasst.
+          </div>
+          <form action={clearActiveScenario}>
+            <button className="btn-secondary px-3 py-1 text-sm">Szenario entfernen</button>
+          </form>
+        </div>
+      )}
 
       <KpiGrid kpis={kpiList} defaultIds={DEFAULT_KPI_IDS} />
 

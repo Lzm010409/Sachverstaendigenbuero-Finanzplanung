@@ -63,17 +63,22 @@ export default async function DashboardPage({
   const offset = Math.max(0, Number(sp.offset) || 0);
   const bm = Math.min(0, Math.max(-24, Number(sp.bm) || 0)); // Budget-Monat (0 = aktuell, negativ = zurück)
   // Aktives Szenario: ?s= (Vorschau) hat Vorrang, sonst das persistierte.
+  // Die Übersicht bleibt auf Basiswerten; das Szenario läuft als Vergleichs-
+  // linie im Graphen mit.
   const activeSetting = (await getSetting("scenario.activeId")) || undefined;
   const scenarioId = sp.s || activeSetting || undefined;
   const [kpiList, matrix, forecast, planning, budgetStatus, activeScenario] = await Promise.all([
-    getDashboardKpis(scenarioId),
-    getCashflowMatrix(6, 6, offset, scenarioId),
-    getForecast(180, scenarioId),
+    getDashboardKpis(),
+    getCashflowMatrix(6, 6, offset),
+    getForecast(180),
     getPlanningSettings(),
     getBudgetStatus(bm),
     scenarioId ? prisma.scenario.findUnique({ where: { id: scenarioId }, select: { id: true, name: true } }) : Promise.resolve(null),
   ]);
   const { months } = matrix;
+  // Szenario-Liquiditätskurve (nur die End-Liquidität je Monat) für die
+  // Vergleichslinie – nur berechnen, wenn das Szenario noch existiert.
+  const scenarioMatrix = activeScenario ? await getCashflowMatrix(6, 6, offset, activeScenario.id) : null;
 
   // Eigene Kennzahlen, die für die Übersicht markiert sind.
   const customDefs = await getCustomKpiDefs({ showOnDashboard: true });
@@ -124,8 +129,8 @@ export default async function DashboardPage({
         <div className="card flex flex-wrap items-center justify-between gap-3 border-brand/30 bg-brand/5">
           <div className="text-sm text-slate-700">
             <span className="mr-2">🎚️</span>
-            Szenario <strong>„{activeScenario.name}"</strong> ist angewendet – Prognose, Liquiditätsverlauf
-            und 13-Wochen-Werte sind entsprechend angepasst.
+            Szenario <strong>„{activeScenario.name}"</strong> läuft als <span className="font-medium text-violet-600">Vergleichslinie</span> im
+            Liquiditätsgraphen mit. Die übrigen Werte bleiben Basiswerte.
           </div>
           <form action={clearActiveScenario}>
             <button className="btn-secondary px-3 py-1 text-sm">Szenario entfernen</button>
@@ -187,12 +192,18 @@ export default async function DashboardPage({
             isCurrent: m.isCurrent,
           }))}
           thresholdCents={planning.minLiquidityCents}
+          scenarioLiquidity={scenarioMatrix ? scenarioMatrix.months.map((m) => m.endLiquidity) : undefined}
+          scenarioName={activeScenario?.name}
         />
         <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
           <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Einzahlung realisiert</span>
           <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-emerald-300" /> Einzahlung geplant</span>
           <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500" /> Auszahlung realisiert</span>
           <span className="flex items-center gap-1"><span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-300" /> Auszahlung geplant</span>
+          <span className="flex items-center gap-1"><span className="inline-block h-0.5 w-4 bg-[#007FFF]" /> Liquidität</span>
+          {activeScenario && (
+            <span className="flex items-center gap-1"><span className="inline-block h-0.5 w-4 border-t-2 border-dashed border-violet-500" /> Liquidität ({activeScenario.name})</span>
+          )}
         </div>
       </div>
 

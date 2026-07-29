@@ -32,17 +32,31 @@ const NAME: Record<string, string> = {
   outflowRealized: "Auszahlungen (realisiert)",
   outflowPlanned: "Auszahlungen (geplant)",
   liq: "Liquidität Ende",
+  liqScenario: "Liquidität (Szenario)",
 };
 
-export function CashflowChart({ points, thresholdCents }: { points: CashflowChartPoint[]; thresholdCents?: number }) {
+export function CashflowChart({
+  points,
+  thresholdCents,
+  scenarioLiquidity,
+  scenarioName,
+}: {
+  points: CashflowChartPoint[];
+  thresholdCents?: number;
+  scenarioLiquidity?: number[]; // Cent je Monat (gleiche Reihenfolge wie points)
+  scenarioName?: string;
+}) {
   const hasSplit = points.some((p) => p.inflowRealized != null || p.inflowPlanned != null);
-  const data = points.map((p) => ({
+  const hasScenario = Array.isArray(scenarioLiquidity) && scenarioLiquidity.length === points.length;
+  if (scenarioName) NAME.liqScenario = `Liquidität (${scenarioName})`;
+  const data = points.map((p, i) => ({
     label: p.label,
     inflowRealized: (p.inflowRealized ?? (hasSplit ? 0 : p.inflow)) / 100,
     inflowPlanned: (p.inflowPlanned ?? 0) / 100,
     outflowRealized: (p.outflowRealized ?? (hasSplit ? 0 : p.outflow)) / 100,
     outflowPlanned: (p.outflowPlanned ?? 0) / 100,
     liq: p.endLiquidity / 100,
+    ...(hasScenario ? { liqScenario: scenarioLiquidity![i] / 100 } : {}),
   }));
   const currentLabel = points.find((p) => p.isCurrent)?.label;
 
@@ -78,6 +92,9 @@ export function CashflowChart({ points, thresholdCents }: { points: CashflowChar
           <Bar dataKey="outflowRealized" name="outflowRealized" stackId="out" radius={[0, 0, 0, 0]} maxBarSize={22} fill="#e6693a" />
           <Bar dataKey="outflowPlanned" name="outflowPlanned" stackId="out" radius={[2, 2, 0, 0]} maxBarSize={22} fill="#f2b49e" fillOpacity={0.75} />
           <Line type="monotone" dataKey="liq" name="liq" stroke="#007FFF" strokeWidth={2} dot={{ r: 2 }} />
+          {hasScenario && (
+            <Line type="monotone" dataKey="liqScenario" name="liqScenario" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="5 4" dot={{ r: 2 }} connectNulls />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

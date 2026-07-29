@@ -34,8 +34,9 @@ export default async function ScenariosPage() {
       <h1 className="text-2xl font-bold text-slate-900">Szenarien</h1>
       <p className="-mt-4 text-sm text-slate-500">
         Globale Faktoren auf Ein-/Auszahlungen und Zahlungsverzug – zusätzlich pro Kategorie fein
-        justierbar. „Auf Übersicht anwenden" merkt sich das Szenario dauerhaft und passt Prognose,
-        Liquiditätsverlauf und 13-Wochen-Werte an – jederzeit wieder abschaltbar.
+        justierbar. „Auf Übersicht anwenden" merkt sich das Szenario dauerhaft und zeigt es im
+        Liquiditätsgraphen der Übersicht als Vergleichslinie neben der Basis-Kurve – jederzeit
+        wieder abschaltbar.
       </p>
 
       <div className="card">

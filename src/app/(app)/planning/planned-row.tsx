@@ -48,8 +48,24 @@ export interface PlannedRowData {
 const day = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
 const euro = (cents: number) => (Math.abs(cents) / 100).toFixed(2).replace(".", ",");
 
+// Status eines Planposten für die Anzeige. „vergangen" = einmaliger Posten mit
+// Datum in der Vergangenheit (bereits eingetreten, i.d.R. durch echte Umsätze
+// gedeckt). „abgelaufen" = wiederkehrender Posten, dessen Enddatum vorbei ist.
+// Beide erzeugen keine künftigen Fälligkeiten mehr und beeinflussen die
+// Prognose nicht – werden hier nur klar gekennzeichnet.
+function rowStatus(item: PlannedRowData): { label: string; cls: string } | null {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  if (!item.active) return { label: "pausiert", cls: "bg-slate-100 text-slate-500" };
+  if (item.recurrence === "ONCE" && item.startDate.slice(0, 10) < todayIso)
+    return { label: "vergangen", cls: "bg-slate-100 text-slate-500" };
+  if (item.recurrence !== "ONCE" && item.endDate && item.endDate.slice(0, 10) < todayIso)
+    return { label: "abgelaufen", cls: "bg-slate-100 text-slate-500" };
+  return null;
+}
+
 export function PlannedRow({ item, categories }: { item: PlannedRowData; categories: CatOpt[] }) {
   const [editing, setEditing] = useState(false);
+  const status = rowStatus(item);
 
   if (editing) {
     return (
@@ -122,10 +138,12 @@ export function PlannedRow({ item, categories }: { item: PlannedRowData; categor
     );
   }
 
+  const pastOneOff = status?.label === "vergangen" || status?.label === "abgelaufen";
   return (
-    <tr className={`border-b border-slate-50 ${item.active ? "" : "opacity-50"}`}>
+    <tr className={`border-b border-slate-50 ${item.active && !pastOneOff ? "" : "opacity-60"}`}>
       <td className="td font-medium">
         {item.name}
+        {status && <span className={`badge ml-2 ${status.cls}`}>{status.label}</span>}
         {item.categoryName && <span className="ml-2 text-xs text-slate-400">{item.categoryName}</span>}
       </td>
       <td className="td">{rhythmLabel(item.recurrence, item.interval)}</td>

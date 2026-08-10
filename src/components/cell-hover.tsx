@@ -53,7 +53,7 @@ export function CellHover({
 }) {
   const url = buildUrl(query);
   const [, force] = useReducer((x) => x + 1, 0);
-  const [pop, setPop] = useState<{ x: number; y: number } | null>(null);
+  const [pop, setPop] = useState<{ x: number; top?: number; bottom?: number; maxH: number } | null>(null);
   const [mounted, setMounted] = useState(false);
   const closeT = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -67,7 +67,16 @@ export function CellHover({
     const r = el.getBoundingClientRect();
     const width = 340;
     const vw = typeof window !== "undefined" ? window.innerWidth : 1024;
-    setPop({ x: Math.max(8, Math.min(r.left, vw - width - 8)), y: r.bottom + 4 });
+    const vh = typeof window !== "undefined" ? window.innerHeight : 768;
+    const x = Math.max(8, Math.min(r.left, vw - width - 8));
+    // Bevorzugt unter der Zelle öffnen; ist dort zu wenig Platz (z.B. unterste
+    // Zeilen), oberhalb verankern. Höhe wird auf den verfügbaren Platz begrenzt
+    // und der Inhalt scrollt – so ist die Positionsliste immer erreichbar.
+    const spaceBelow = vh - r.bottom - 12;
+    const spaceAbove = r.top - 12;
+    const below = spaceBelow >= 240 || spaceBelow >= spaceAbove;
+    const maxH = Math.max(160, Math.floor(below ? spaceBelow : spaceAbove));
+    setPop(below ? { x, top: r.bottom + 4, maxH } : { x, bottom: vh - r.top + 4, maxH });
     if (!cache.has(url)) {
       cache.set(url, "loading");
       force();
@@ -97,19 +106,21 @@ export function CellHover({
       {pop && mounted &&
         createPortal(
           <div
-            className="fixed z-[200] w-[340px] rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-xl"
-            style={{ left: pop.x, top: pop.y }}
+            className="fixed z-[200] flex w-[340px] flex-col rounded-lg border border-slate-200 bg-white text-xs shadow-xl"
+            style={{ left: pop.x, top: pop.top, bottom: pop.bottom, maxHeight: pop.maxH }}
             onMouseEnter={() => closeT.current && clearTimeout(closeT.current)}
             onMouseLeave={scheduleClose}
           >
-            <div className="mb-2 font-semibold text-slate-700">{title}</div>
-            {detail === "loading" || detail === undefined ? (
-              <div className="flex items-center gap-2 py-2 text-slate-400"><span className="jd-spinner h-3.5 w-3.5" /> lädt…</div>
-            ) : detail === "error" ? (
-              <div className="py-2 text-red-500">Konnte Details nicht laden.</div>
-            ) : (
-              <DetailView detail={detail} />
-            )}
+            <div className="shrink-0 border-b border-slate-100 px-3 py-2 font-semibold text-slate-700">{title}</div>
+            <div className="overflow-y-auto px-3 py-2">
+              {detail === "loading" || detail === undefined ? (
+                <div className="flex items-center gap-2 py-2 text-slate-400"><span className="jd-spinner h-3.5 w-3.5" /> lädt…</div>
+              ) : detail === "error" ? (
+                <div className="py-2 text-red-500">Konnte Details nicht laden.</div>
+              ) : (
+                <DetailView detail={detail} query={query} />
+              )}
+            </div>
           </div>,
           document.body,
         )}
@@ -117,10 +128,19 @@ export function CellHover({
   );
 }
 
-function DetailView({ detail }: { detail: CellDetail }) {
+function drilldownHref(query: Record<string, string | undefined>): string {
+  if (!query.from || !query.to) return "/breakdown";
+  const p = new URLSearchParams({ metric: "range", from: query.from, to: query.to });
+  if (query.dir === "in" || query.dir === "out") p.set("dir", query.dir);
+  if (query.cat && query.cat !== "all") p.set("cat", query.cat);
+  return `/drilldown?${p.toString()}`;
+}
+
+function DetailView({ detail, query }: { detail: CellDetail; query: Record<string, string | undefined> }) {
   const { ist, soll } = detail;
   const hasSoll = soll.budget != null || soll.planned.length > 0 || soll.open.length > 0;
   const abw = ist.total - (soll.budget ?? 0);
+  const href = drilldownHref(query);
   return (
     <div className="space-y-2">
       <div>
@@ -131,7 +151,7 @@ function DetailView({ detail }: { detail: CellDetail }) {
         {ist.items.length === 0 ? (
           <p className="text-slate-400">keine Buchungen</p>
         ) : (
-          <div className="max-h-40 space-y-0.5 overflow-y-auto">
+          <div className="space-y-0.5">
             {ist.items.map((it, i) => (
               <div key={i} className="flex items-center justify-between gap-2">
                 <span className="shrink-0 text-slate-400">{dm(it.date)}</span>
@@ -148,7 +168,7 @@ function DetailView({ detail }: { detail: CellDetail }) {
         {!hasSoll ? (
           <p className="text-slate-400">kein Soll hinterlegt</p>
         ) : (
-          <div className="max-h-40 space-y-0.5 overflow-y-auto">
+          <div className="space-y-0.5">
             {soll.budget != null && (
               <div className="flex items-center justify-between gap-2">
                 <span className="text-slate-600">Budget (Soll)</span>
@@ -180,7 +200,7 @@ function DetailView({ detail }: { detail: CellDetail }) {
         </div>
       )}
       <p className="text-[10px] text-slate-400">
-        <Link href="/breakdown" className="text-brand hover:underline">Auswertung →</Link>
+        <Link href={href} className="text-brand hover:underline">Positionen im Detail →</Link>
       </p>
     </div>
   );

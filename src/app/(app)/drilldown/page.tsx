@@ -302,7 +302,7 @@ async function RunwayDrill() {
   );
 }
 
-async function RangeDrill({ from, to }: { from: string; to: string }) {
+async function RangeDrill({ from, to, dir, cat }: { from: string; to: string; dir?: string; cat?: string }) {
   const today = todayUTC();
   const fromD = startOfDayUTC(new Date(from + "T00:00:00Z"));
   const toD = startOfDayUTC(new Date(to + "T00:00:00Z"));
@@ -314,33 +314,40 @@ async function RangeDrill({ from, to }: { from: string; to: string }) {
       orderBy: { bookingDate: "asc" },
       include: { account: true, category: true },
     }),
-    prisma.openItem.findMany({ where: { paid: false }, select: { kind: true, amount: true, paidAmount: true, dueDate: true, counterparty: true, reference: true } }),
+    prisma.openItem.findMany({ where: { paid: false }, select: { kind: true, amount: true, paidAmount: true, dueDate: true, counterparty: true, reference: true, categoryId: true } }),
     prisma.plannedItem.findMany({ where: { active: true } }),
   ]);
 
-  type Row = { date: string; label: string; sub?: string | null; amount: number; type: string };
+  type Row = { date: string; label: string; sub?: string | null; amount: number; type: string; categoryId: string | null };
   const rows: Row[] = [];
-  for (const t of txs) rows.push({ date: isoDate(t.bookingDate), label: t.counterparty || t.purpose || "Umsatz", sub: t.category?.name ?? t.account.name, amount: t.amount, type: "realisiert" });
+  for (const t of txs) rows.push({ date: isoDate(t.bookingDate), label: t.counterparty || t.purpose || "Umsatz", sub: t.category?.name ?? t.account.name, amount: t.amount, type: "realisiert", categoryId: t.categoryId });
   for (const oi of openItems) {
     const remaining = Math.max(0, oi.amount - oi.paidAmount);
     if (remaining <= 0) continue;
     const eff = oi.dueDate.getTime() < today.getTime() ? today : startOfDayUTC(oi.dueDate);
     if (eff.getTime() < fromD.getTime() || eff.getTime() >= toExcl.getTime()) continue;
-    rows.push({ date: isoDate(eff), label: oi.counterparty || (oi.kind === "RECEIVABLE" ? "Forderung" : "Verbindlichkeit"), sub: oi.reference, amount: oi.kind === "RECEIVABLE" ? remaining : -remaining, type: oi.dueDate.getTime() < today.getTime() ? "überfällig" : "geplant" });
+    rows.push({ date: isoDate(eff), label: oi.counterparty || (oi.kind === "RECEIVABLE" ? "Forderung" : "Verbindlichkeit"), sub: oi.reference, amount: oi.kind === "RECEIVABLE" ? remaining : -remaining, type: oi.dueDate.getTime() < today.getTime() ? "überfällig" : "geplant", categoryId: oi.categoryId });
   }
   for (const p of planned) {
     for (const occ of occurrencesBetween(p, fromD, toD)) {
-      rows.push({ date: isoDate(occ), label: p.name, sub: "Planposten", amount: p.amount, type: "geplant" });
+      rows.push({ date: isoDate(occ), label: p.name, sub: "Planposten", amount: p.amount, type: "geplant", categoryId: p.categoryId });
     }
   }
-  rows.sort((a, b) => a.date.localeCompare(b.date));
-  const total = rows.reduce((s, r) => s + r.amount, 0);
+  // Richtungs-/Kategoriefilter (für den gezielten Drilldown aus dem Hover-Popup).
+  let filtered = rows;
+  if (dir === "in") filtered = filtered.filter((r) => r.amount > 0);
+  else if (dir === "out") filtered = filtered.filter((r) => r.amount < 0);
+  if (cat === "none") filtered = filtered.filter((r) => r.categoryId == null);
+  else if (cat && cat !== "all") filtered = filtered.filter((r) => r.categoryId === cat);
+  filtered.sort((a, b) => a.date.localeCompare(b.date));
+  const total = filtered.reduce((s, r) => s + r.amount, 0);
+  const dirWord = dir === "in" ? "Einzahlungen" : dir === "out" ? "Auszahlungen" : "Bewegungen";
 
   return (
     <div className="space-y-6">
-      <Header title={`Bewegungen ${new Date(from).toLocaleDateString("de-DE")} – ${new Date(to).toLocaleDateString("de-DE")}`} total={total} sub={`${rows.length} Positionen`} />
+      <Header title={`${dirWord} ${new Date(from).toLocaleDateString("de-DE")} – ${new Date(to).toLocaleDateString("de-DE")}`} total={total} sub={`${filtered.length} Positionen`} />
       <div className="card overflow-x-auto">
-        {rows.length === 0 ? (
+        {filtered.length === 0 ? (
           <p className="text-sm text-slate-400">Keine Bewegungen in diesem Zeitraum.</p>
         ) : (
           <table className="w-full text-sm">
@@ -350,7 +357,7 @@ async function RangeDrill({ from, to }: { from: string; to: string }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
+              {filtered.map((r, i) => (
                 <tr key={i} className="border-b border-slate-50">
                   <td className="td whitespace-nowrap">{new Date(r.date).toLocaleDateString("de-DE")}</td>
                   <td className="td"><div className="font-medium text-slate-700">{r.label}</div>{r.sub && <div className="text-xs text-slate-400">{r.sub}</div>}</td>
@@ -418,7 +425,7 @@ async function AnomalyDrill({ dkey }: { dkey: string }) {
 export default async function DrilldownPage({
   searchParams,
 }: {
-  searchParams: Promise<{ metric?: string; page?: string; from?: string; to?: string; key?: string; size?: string }>;
+  searchParams: Promise<{ metric?: string; page?: string; from?: string; to?: string; key?: string; size?: string; dir?: string; cat?: string }>;
 }) {
   const sp = await searchParams;
   const metric = (sp.metric ?? "balance") as Metric;
@@ -427,7 +434,7 @@ export default async function DrilldownPage({
 
   switch (metric) {
     case "range":
-      if (sp.from && sp.to) return <RangeDrill from={sp.from} to={sp.to} />;
+      if (sp.from && sp.to) return <RangeDrill from={sp.from} to={sp.to} dir={sp.dir} cat={sp.cat} />;
       break;
     case "anomaly":
       if (sp.key) return <AnomalyDrill dkey={sp.key} />;

@@ -51,7 +51,14 @@ export default async function PlanningPage({
   }
   if (sp.state === "active") where.active = true;
   else if (sp.state === "inactive") where.active = false;
-  else if (sp.state === "expired") where.endDate = { lt: today }; // Enddatum in der Vergangenheit
+  else if (sp.state === "expired") {
+    // Vergangen/abgelaufen: wiederkehrend mit Enddatum in der Vergangenheit ODER
+    // einmalig mit Datum in der Vergangenheit (bereits eingetreten).
+    where.OR = [
+      { endDate: { lt: today } },
+      { recurrence: "ONCE", startDate: { lt: today } },
+    ];
+  }
   if (sp.q) where.name = { contains: sp.q, mode: "insensitive" };
 
   const [items, totalCount, categories] = await Promise.all([
@@ -121,7 +128,7 @@ export default async function PlanningPage({
             <option value="">alle</option>
             <option value="active">aktiv</option>
             <option value="inactive">pausiert</option>
-            <option value="expired">abgelaufen</option>
+            <option value="expired">vergangen / abgelaufen</option>
           </select>
         </div>
         <div className="min-w-[160px] flex-1">

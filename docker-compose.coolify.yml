@@ -29,6 +29,12 @@ services:
       # wieder entfernen.
       - DB_COPY
       - DB_COPY_TARGET
+    # An das vordefinierte Coolify-Netz anschließen, damit der Container die
+    # eigenständige Postgres (Resource-UUID als Hostname) auflösen kann. Der
+    # Compose-Stack läuft sonst in einem isolierten Projektnetz.
+    networks:
+      - default
+      - coolify
     expose:
       - "3000"
     depends_on:
@@ -57,3 +63,9 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  # Von Coolify verwaltetes, geteiltes Netz (extern). Hier hängt auch die
+  # eigenständige Postgres, damit sie per Resource-UUID erreichbar ist.
+  coolify:
+    external: true

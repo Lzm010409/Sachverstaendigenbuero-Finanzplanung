@@ -13,7 +13,12 @@ services:
       dockerfile: Dockerfile
     environment:
       - SERVICE_FQDN_APP_3000
-      - DATABASE_URL=postgresql://liqui:${SERVICE_PASSWORD_POSTGRES}@db:5432/liqui?schema=public
+      # DATABASE_URL wird in Coolify gesetzt und zeigt nach der Umschaltung auf
+      # die eigenständige Postgres. (Vorher zeigte sie inline auf den db-Dienst.)
+      - DATABASE_URL
+      # Quelle für den finalen, verlustfreien Abgleich unmittelbar vor der
+      # Umschaltung: die alte In-Compose-Datenbank (Passwort via Coolify-Magie).
+      - DB_COPY_SOURCE=postgresql://liqui:${SERVICE_PASSWORD_POSTGRES}@db:5432/liqui
       - APP_PASSWORD=${SERVICE_PASSWORD_APPLOGIN}
       - AUTH_SECRET=${SERVICE_BASE64_64_AUTHSECRET}
       - AUTH_URL=${AUTH_URL:-https://finance.gollenstede.app}
@@ -23,10 +28,9 @@ services:
       - AUTH_MICROSOFT_ENTRA_ID_SECRET=${AUTH_MICROSOFT_ENTRA_ID_SECRET:-}
       - AUTH_MICROSOFT_ENTRA_ID_ISSUER=${AUTH_MICROSOFT_ENTRA_ID_ISSUER:-}
       - NODE_ENV=production
-      # Einmaliger Datenumzug (scripts/db-copy.sh): wird nur aktiv, wenn beide in
-      # Coolify gesetzt sind. Quelle bleibt die obige DATABASE_URL (alte db),
-      # Ziel ist die eigenständige Postgres. Nach erfolgreicher Umschaltung
-      # wieder entfernen.
+      # Einmaliger Datenumzug (scripts/db-copy.sh): läuft nur, wenn DB_COPY=1 und
+      # DB_COPY_TARGET gesetzt sind. Quelle ist DB_COPY_SOURCE (alte db), Ziel die
+      # eigenständige Postgres. Nach erfolgreicher Umschaltung wieder entfernen.
       - DB_COPY
       - DB_COPY_TARGET
     # An das vordefinierte Coolify-Netz anschließen, damit der Container die

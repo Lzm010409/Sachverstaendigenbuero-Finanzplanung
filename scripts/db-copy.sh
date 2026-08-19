@@ -14,8 +14,13 @@ if [ "${DB_COPY:-}" != "1" ] || [ -z "${DB_COPY_TARGET:-}" ]; then
   exit 0
 fi
 
+# Quelle: standardmäßig die laufende DATABASE_URL. Beim finalen Umzug zeigt
+# DATABASE_URL aber schon auf das Ziel — dann pinnt DB_COPY_SOURCE die Quelle
+# explizit auf die alte Datenbank, damit der letzte Abgleich verlustfrei genau
+# vor der Umschaltung läuft.
+SRC_RAW="${DB_COPY_SOURCE:-$DATABASE_URL}"
 # libpq versteht den Prisma-Zusatz "?schema=public" nicht — daher abschneiden.
-SRC="${DATABASE_URL%%\?*}"
+SRC="${SRC_RAW%%\?*}"
 DST="${DB_COPY_TARGET%%\?*}"
 
 echo "[db-copy] Start: Quelle -> Ziel (pg_dump | pg_restore)"

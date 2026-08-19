@@ -23,6 +23,12 @@ services:
       - AUTH_MICROSOFT_ENTRA_ID_SECRET=${AUTH_MICROSOFT_ENTRA_ID_SECRET:-}
       - AUTH_MICROSOFT_ENTRA_ID_ISSUER=${AUTH_MICROSOFT_ENTRA_ID_ISSUER:-}
       - NODE_ENV=production
+      # Einmaliger Datenumzug (scripts/db-copy.sh): wird nur aktiv, wenn beide in
+      # Coolify gesetzt sind. Quelle bleibt die obige DATABASE_URL (alte db),
+      # Ziel ist die eigenständige Postgres. Nach erfolgreicher Umschaltung
+      # wieder entfernen.
+      - DB_COPY
+      - DB_COPY_TARGET
     expose:
       - "3000"
     depends_on:

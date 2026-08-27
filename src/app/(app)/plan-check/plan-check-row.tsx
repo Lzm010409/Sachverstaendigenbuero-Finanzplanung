@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import { formatCents, parseAmountToCents } from "@/lib/money";
+import { budgetCellColor } from "@/lib/budget-color";
 import type { PlanReviewRow } from "@/lib/plan-review";
 import { upsertBudgetFromReview, upsertPlannedFromReview } from "@/app/actions/plan-check";
 
@@ -47,6 +48,8 @@ export function PlanCheckRow({ row }: { row: PlanReviewRow }) {
   const cents = parseAmountToCents(eur) ?? 0;
   const st = STATUS[row.status] ?? STATUS.ok;
   const isIncome = row.kind === "INCOME";
+  // Farbskala Ø-Ist gegen Plan/Monat (Budget + Planposten).
+  const avgBg = budgetCellColor(Math.abs(row.avg), row.plan, isIncome);
 
   return (
     <tr className="border-b border-slate-50 align-top">
@@ -54,12 +57,26 @@ export function PlanCheckRow({ row }: { row: PlanReviewRow }) {
         {row.name}
         <span className={`badge ml-2 ${st.cls}`}>{st.label}</span>
       </td>
-      {row.months.map((v, i) => (
-        <td key={i} className="td whitespace-nowrap text-right tabular-nums text-slate-500">
-          {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
-        </td>
-      ))}
-      <td className="td whitespace-nowrap text-right font-semibold tabular-nums">{formatCents(row.avg)}</td>
+      {row.months.map((v, i) => {
+        // Jeder Monat gegen den aktuellen Monatsplan – gleiche Skala wie überall.
+        const bg = v === 0 ? undefined : budgetCellColor(Math.abs(v), row.plan, isIncome);
+        return (
+          <td
+            key={i}
+            className="td whitespace-nowrap text-right tabular-nums text-slate-500"
+            style={bg ? { backgroundColor: bg } : undefined}
+          >
+            {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
+          </td>
+        );
+      })}
+      <td
+        className="td whitespace-nowrap text-right font-semibold tabular-nums"
+        style={avgBg ? { backgroundColor: avgBg } : undefined}
+        title={row.plan > 0 ? `Ø Ist ${formatCents(row.avg)} gegen Plan ${formatCents(row.plan)}` : undefined}
+      >
+        {formatCents(row.avg)}
+      </td>
       <td className="td whitespace-nowrap text-right tabular-nums text-slate-500">
         {row.plan === 0 ? <span className="text-slate-300">–</span> : formatCents(row.plan)}
         {(row.budgetMonthly > 0 || row.plannedMonthly > 0) && (

@@ -103,23 +103,31 @@ export function PivotSections({
   const renderRow = (row: PivotRow) => {
     const isIncome = row.kind === "INCOME";
     const periodBudgetNA = row.budgetPct == null;
+    const monthBudget = row.annualBudget > 0 ? row.annualBudget / 12 : 0;
     return (
       <tr key={row.categoryId ?? row.name} className="border-b border-slate-50">
         <td className="sticky left-0 z-10 bg-white px-3 py-1.5 text-sm text-slate-700">
           <span className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ backgroundColor: row.color }} />
           {row.name}
         </td>
-        {row.values.map((v, i) => (
-          <td
-            key={months[i].key}
-            className={`cursor-help whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${isIncome ? "text-emerald-700" : "text-red-600"} ${months[i].isCurrent ? "bg-brand/5" : ""} hover:bg-brand/10`}
-            onMouseEnter={(e) => openCell(e, row, i)}
-            onMouseLeave={scheduleClose}
-            onClick={(e) => openCell(e, row, i)}
-          >
-            {v === 0 ? <span className="text-slate-300">–</span> : eur(v)}
-          </td>
-        ))}
+        {row.values.map((v, i) => {
+          // Farbskala je Monat gegen das anteilige Monatsbudget – dieselbe
+          // Skala wie in der Auswertung, damit beide Ansichten gleich lesen.
+          // Monat ohne Buchung bleibt neutral (siehe Auswertung).
+          const bg = v === 0 ? undefined : budgetCellColor(Math.abs(v), monthBudget, isIncome);
+          return (
+            <td
+              key={months[i].key}
+              className={`cursor-help whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${isIncome ? "text-emerald-700" : "text-red-600"} ${months[i].isCurrent ? "outline outline-1 -outline-offset-1 outline-brand/40" : ""} ${bg ? "hover:ring-2 hover:ring-inset hover:ring-brand/50" : "hover:bg-brand/10"}`}
+              style={bg ? { backgroundColor: bg } : undefined}
+              onMouseEnter={(e) => openCell(e, row, i)}
+              onMouseLeave={scheduleClose}
+              onClick={(e) => openCell(e, row, i)}
+            >
+              {v === 0 ? <span className="text-slate-300">–</span> : eur(v)}
+            </td>
+          );
+        })}
         {/* % Jahr */}
         {periodBudgetNA ? (
           <td className="whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums text-slate-300">–</td>
@@ -144,6 +152,10 @@ export function PivotSections({
       const body = g.rows.map(renderRow);
       if (!g.group) return <tbody key="ohne">{body}</tbody>;
       const isIncome = g.group.kind === "INCOME";
+      const gBudget = sumBy(g.rows, (r) => r.annualBudget);
+      const gActual = sumBy(g.rows, (r) => r.yearActual);
+      const gMonthBudget = gBudget > 0 ? gBudget / 12 : 0;
+      const gYearBg = budgetCellColor(gActual, gBudget, isIncome);
       return (
         <GroupTableSection
           key={g.group.id}
@@ -162,20 +174,23 @@ export function PivotSections({
               </td>
               {months.map((m, i) => {
                 const v = sumBy(g.rows, (r) => r.values[i] ?? 0);
+                const bg = v === 0 ? undefined : budgetCellColor(Math.abs(v), gMonthBudget, isIncome);
                 return (
                   <td
                     key={m.key}
-                    className={`whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${isIncome ? "text-emerald-700" : "text-red-600"} ${m.isCurrent ? "bg-brand/5" : ""}`}
+                    className={`whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${isIncome ? "text-emerald-700" : "text-red-600"} ${m.isCurrent && !bg ? "bg-brand/5" : ""} ${m.isCurrent ? "outline outline-1 -outline-offset-1 outline-brand/40" : ""}`}
+                    style={bg ? { backgroundColor: bg } : undefined}
                   >
                     {v === 0 ? <span className="text-slate-300">–</span> : eur(v)}
                   </td>
                 );
               })}
-              <td className="px-3 py-1.5 text-right text-sm tabular-nums text-slate-500">
-                {(() => {
-                  const b = sumBy(g.rows, (r) => r.annualBudget);
-                  return b > 0 ? eur(isIncome ? b : -b) : "–";
-                })()}
+              <td
+                className="whitespace-nowrap px-3 py-1.5 text-right text-sm font-semibold tabular-nums text-slate-800"
+                style={gYearBg ? { backgroundColor: gYearBg } : undefined}
+                title={gBudget > 0 ? `${formatCents(gActual)} von ${formatCents(gBudget)} (Jahresbudget)` : undefined}
+              >
+                {gBudget > 0 ? `${Math.round((gActual / gBudget) * 100)} %` : <span className="text-slate-300">–</span>}
               </td>
             </tr>
           }

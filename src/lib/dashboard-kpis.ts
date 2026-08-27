@@ -8,6 +8,7 @@ import { getVatForecast } from "./tax";
 import { getTransferCategoryIds } from "./queries";
 import { todayUTC, addMonths, addDays } from "./dates";
 import { formatCents } from "./money";
+import { budgetCellColor } from "./budget-color";
 
 export type KpiTone = "default" | "positive" | "negative" | "warning";
 
@@ -19,6 +20,12 @@ export interface KpiDescriptor {
   hint?: string;
   href?: string;
   group?: string;
+  /**
+   * Hintergrundfarbe aus der Budget-Farbskala. Gesetzt bei allen Kacheln, die
+   * Ist gegen Plan/Soll stellen – damit sie dieselbe Sprache sprechen wie die
+   * Tabellen (grün = im Rahmen, gelb = nah am Limit, rot = überzogen).
+   */
+  scaleBg?: string;
 }
 
 // Standardmäßig sichtbare KPIs (Reihenfolge = Anzeige). Der Rest ist über den
@@ -123,6 +130,7 @@ export async function getDashboardKpis(scenarioId?: string): Promise<KpiDescript
       label: "Budget Einnahmen (Ist/Soll)",
       value: budgetUtil.income.pct == null ? "–" : pct(budgetUtil.income.pct),
       tone: "default",
+      scaleBg: budgetCellColor(budgetUtil.income.actual, budgetUtil.income.budget, true),
       hint: budgetUtil.income.budget > 0 ? `${formatCents(budgetUtil.income.actual)} / ${formatCents(budgetUtil.income.budget)}` : "kein Budget",
       href: "/breakdown",
     },
@@ -131,6 +139,7 @@ export async function getDashboardKpis(scenarioId?: string): Promise<KpiDescript
       label: "Budget Ausgaben (Ist/Soll)",
       value: budgetUtil.expense.pct == null ? "–" : pct(budgetUtil.expense.pct),
       tone: budgetUtil.expense.pct != null && budgetUtil.expense.pct > 1 ? "negative" : "default",
+      scaleBg: budgetCellColor(budgetUtil.expense.actual, budgetUtil.expense.budget, false),
       hint: budgetUtil.expense.budget > 0 ? `${formatCents(-budgetUtil.expense.actual)} / ${formatCents(-budgetUtil.expense.budget)}` : "kein Budget",
       href: "/breakdown",
     },

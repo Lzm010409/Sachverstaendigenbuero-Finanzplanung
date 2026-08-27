@@ -54,7 +54,9 @@ function BreakdownDataRow({
               />
             </td>
             {r.values.map((v, i) => {
-              const bg = budgetCellColor(Math.abs(v), periodBudget, isIncome);
+              // Ohne Buchung im Zeitraum keine Bewertung – eine leere Periode ist
+              // weder gut noch schlecht (künftige Monate wären sonst pauschal grün/rot).
+              const bg = v === 0 ? undefined : budgetCellColor(Math.abs(v), periodBudget, isIncome);
               const from = periods[i].start.toISOString().slice(0, 10);
               const to = new Date(periods[i].end.getTime() - 86_400_000).toISOString().slice(0, 10);
               return (
@@ -155,6 +157,7 @@ function Section({
       const gActual = sumBy(g.rows, (r) => r.yearActual);
       const gPct = gBudget > 0 ? Math.round((gActual / gBudget) * 100) : null;
       const gBg = budgetCellColor(gActual, gBudget, isIncomeSection);
+      const gPeriodBudget = gBudget > 0 ? gBudget / divisor : 0;
       return (
         <GroupTableSection
           key={g.group.id}
@@ -171,11 +174,20 @@ function Section({
                 {g.group.name}
                 <span className="ml-2 text-xs font-normal text-slate-400">({g.rows.length})</span>
               </td>
-              {gVals.map((v, i) => (
-                <td key={periods[i].key} className="td whitespace-nowrap text-right tabular-nums">
-                  {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
-                </td>
-              ))}
+              {gVals.map((v, i) => {
+                // Gleiche Farbskala wie bei den Einzelkategorien: das
+                // aufsummierte Jahresbudget der Gruppe anteilig je Periode.
+                const bg = v === 0 ? undefined : budgetCellColor(Math.abs(v), gPeriodBudget, isIncomeSection);
+                return (
+                  <td
+                    key={periods[i].key}
+                    className="td whitespace-nowrap text-right tabular-nums"
+                    style={bg ? { backgroundColor: bg } : undefined}
+                  >
+                    {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
+                  </td>
+                );
+              })}
               <td className="td whitespace-nowrap text-right tabular-nums">
                 {gBudget > 0 ? formatCents(isIncomeSection ? gBudget : -gBudget) : "–"}
               </td>
@@ -209,8 +221,18 @@ function Section({
       <tbody>
       <tr className="border-y-2 border-slate-200 bg-slate-100 font-semibold text-slate-800">
         <td className="td sticky left-0 z-10 bg-slate-100">Summe {title}</td>
-        {periodSums.map((v, i) => (
-          <td key={periods[i].key} className="td whitespace-nowrap text-right tabular-nums">
+        {periodSums.map((v, i) => {
+          // Farbskala auch auf der Summenzeile: Ist der budgetierten
+          // Kategorien gegen das anteilige Perioden-Budget der Sektion.
+          const bg = periodBudgetedSums[i] === 0
+            ? undefined
+            : budgetCellColor(Math.abs(periodBudgetedSums[i]), periodBudgetTotal, isIncomeSection);
+          return (
+          <td
+            key={periods[i].key}
+            className="td whitespace-nowrap text-right tabular-nums"
+            style={bg ? { backgroundColor: bg } : undefined}
+          >
             {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
             {periodPct[i] != null && (
               <div
@@ -221,7 +243,8 @@ function Section({
               </div>
             )}
           </td>
-        ))}
+          );
+        })}
         <td className="td whitespace-nowrap text-right tabular-nums">
           {sumBudget > 0 ? formatCents(isIncomeSection ? sumBudget : -sumBudget) : "–"}
         </td>

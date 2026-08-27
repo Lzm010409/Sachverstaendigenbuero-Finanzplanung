@@ -3,6 +3,7 @@ import { getPlanReview, type PlanReviewRow } from "@/lib/plan-review";
 import { GroupTableSection, Chevron } from "@/components/category-group";
 import { groupRowsByCategoryGroup, sumBy } from "@/lib/category-tree";
 import { formatCents } from "@/lib/money";
+import { budgetCellColor } from "@/lib/budget-color";
 
 /** localStorage-Schlüssel für den Aufklapp-Zustand des Plan-Checks. */
 const STORE_KEY = "cat:open:plan-check";
@@ -37,6 +38,8 @@ export async function CategorySection() {
       if (!g.group) return <tbody key="ohne">{body}</tbody>;
       const gAvg = sumBy(g.rows, (r) => r.avg);
       const gPlan = sumBy(g.rows, (r) => r.plan);
+      const gIncome = g.group.kind === "INCOME";
+      const gAvgBg = budgetCellColor(Math.abs(gAvg), gPlan, gIncome);
       return (
         <GroupTableSection
           key={g.group.id}
@@ -53,12 +56,25 @@ export async function CategorySection() {
                 {g.group.name}
                 <span className="ml-2 text-xs font-normal text-slate-400">({g.rows.length})</span>
               </td>
-              {months.map((m, i) => (
-                <td key={m.key} className="td text-right tabular-nums">
-                  {formatCents(sumBy(g.rows, (r) => r.months[i] ?? 0))}
-                </td>
-              ))}
-              <td className="td text-right tabular-nums">{formatCents(gAvg)}</td>
+              {months.map((m, i) => {
+                const v = sumBy(g.rows, (r) => r.months[i] ?? 0);
+                const bg = v === 0 ? undefined : budgetCellColor(Math.abs(v), gPlan, gIncome);
+                return (
+                  <td
+                    key={m.key}
+                    className="td text-right tabular-nums"
+                    style={bg ? { backgroundColor: bg } : undefined}
+                  >
+                    {formatCents(v)}
+                  </td>
+                );
+              })}
+              <td
+                className="td text-right tabular-nums"
+                style={gAvgBg ? { backgroundColor: gAvgBg } : undefined}
+              >
+                {formatCents(gAvg)}
+              </td>
               <td className="td text-right tabular-nums">{formatCents(gPlan)}</td>
               <td className="td"></td>
             </tr>

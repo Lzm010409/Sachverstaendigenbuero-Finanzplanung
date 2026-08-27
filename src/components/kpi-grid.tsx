@@ -21,15 +21,16 @@ function KpiCard({ kpi }: { kpi: KpiDescriptor }) {
       {kpi.hint && <div className="mt-0.5 text-xs text-slate-400">{kpi.hint}</div>}
     </>
   );
+  const style = kpi.scaleBg ? { backgroundColor: kpi.scaleBg } : undefined;
   if (kpi.href) {
     return (
-      <Link href={kpi.href} className="card block transition hover:ring-2 hover:ring-brand/30">
+      <Link href={kpi.href} className="card block transition hover:ring-2 hover:ring-brand/30" style={style}>
         {inner}
         <div className="mt-1 text-xs text-brand">Details →</div>
       </Link>
     );
   }
-  return <div className="card">{inner}</div>;
+  return <div className="card" style={style}>{inner}</div>;
 }
 
 export function KpiGrid({ kpis, defaultIds }: { kpis: KpiDescriptor[]; defaultIds: string[] }) {

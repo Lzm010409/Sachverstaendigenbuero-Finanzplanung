@@ -9,6 +9,7 @@ import { getCustomKpiDefs, computeCustomKpis } from "@/lib/custom-kpi";
 import { todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
 import { groupRowsByCategoryGroup, sumBy } from "@/lib/category-tree";
+import { budgetCellColor } from "@/lib/budget-color";
 import { ReportBuilder, type ReportData } from "./report-builder";
 
 export const dynamic = "force-dynamic";
@@ -55,6 +56,12 @@ export default async function ReportPage() {
         proj: projPct != null ? `${projPct} %` : null,
         breach: !isIncome && projPct != null && projPct > 100,
         isGroup: opts?.isGroup ?? false,
+        // Farbskala wie am Bildschirm; im Druck sichtbar dank
+        // print-color-adjust: exact (globals.css).
+        bg: budgetCellColor(yearActual, annualBudget, isIncome) ?? null,
+        projBg: projPct != null
+          ? budgetCellColor((yearActual / elapsed), annualBudget, isIncome) ?? null
+          : null,
       };
     };
     const grouped = groupRowsByCategoryGroup(budgeted, (r) => r.categoryId, bd.categories);
@@ -76,6 +83,10 @@ export default async function ReportPage() {
       sumPct: sumPctN != null ? `${sumPctN} %` : "–",
       sumProj: sumProjN != null ? `${sumProjN} %` : null,
       sumBreach: !isIncome && sumProjN != null && sumProjN > 100,
+      sumBg: budgetCellColor(sumActual, sumBudget, isIncome) ?? null,
+      sumProjBg: sumProjN != null
+        ? budgetCellColor(sumActual / elapsed, sumBudget, isIncome) ?? null
+        : null,
     };
   };
   const budget = {

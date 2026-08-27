@@ -6,6 +6,7 @@ import { type BudgetStatus, type BudgetStatusRow } from "@/lib/analytics";
 import { formatCents } from "@/lib/money";
 import { GroupSection, Chevron } from "@/components/category-group";
 import { groupRowsByCategoryGroup, sumBy } from "@/lib/category-tree";
+import { budgetCellColor } from "@/lib/budget-color";
 
 // Balken-/Punktfarbe je nach Art (Ausgaben: über Budget = schlecht; Einnahmen:
 // Ziel erreicht = gut).
@@ -29,8 +30,11 @@ function BudgetBar({ r }: { r: BudgetStatusRow }) {
   const t = tone(r);
   const barPct = Math.min(100, Math.round(r.pct * 100));
   const projMark = Math.min(100, Math.round(r.projectedPct * 100));
+  // Gleiche Farbskala wie in den Tabellen als dezenter Zeilenhintergrund –
+  // der Balken behält seine kräftige Ampelfarbe.
+  const bg = budgetCellColor(r.actual, r.monthlyBudget, r.kind === "INCOME");
   return (
-    <div>
+    <div className="rounded px-1.5 py-1" style={bg ? { backgroundColor: bg } : undefined}>
               <div className="flex items-center justify-between text-xs">
                 <span className="flex items-center gap-2 text-slate-700">
                   <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: r.color }} />
@@ -127,6 +131,7 @@ export function BudgetStatusCard({
           const gBudget = sumBy(g.rows, (r) => r.monthlyBudget);
           const gActual = sumBy(g.rows, (r) => r.actual);
           const gPct = gBudget > 0 ? gActual / gBudget : 0;
+          const gBg = budgetCellColor(gActual, gBudget, g.group.kind === "INCOME");
           return (
             <GroupSection
               key={g.group.id}
@@ -134,7 +139,10 @@ export function BudgetStatusCard({
               groupId={g.group.id}
               className="rounded-md border border-slate-100 p-2"
               header={
-                <div className="flex items-center justify-between text-xs">
+                <div
+                  className="flex items-center justify-between rounded px-1.5 py-1 text-xs"
+                  style={gBg ? { backgroundColor: gBg } : undefined}
+                >
                   <span className="flex items-center gap-2 font-semibold text-slate-700">
                     <Chevron />
                     <span

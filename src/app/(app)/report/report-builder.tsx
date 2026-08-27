@@ -31,11 +31,13 @@ export interface ReportData {
 
 interface BudgetGroup {
   // isGroup = Summenzeile einer Überkategorie (im Report immer ausgeschrieben).
-  rows: { name: string; actual: string; budget: string; pct: string; proj: string | null; breach: boolean; isGroup?: boolean }[];
+  rows: { name: string; actual: string; budget: string; pct: string; proj: string | null; breach: boolean; isGroup?: boolean; bg?: string | null; projBg?: string | null }[];
   sumActual: string;
   sumBudget: string;
   sumPct: string;
   sumProj: string | null;
+    sumBg?: string | null;
+    sumProjBg?: string | null;
   sumBreach: boolean;
 }
 
@@ -446,9 +448,17 @@ export function ReportBuilder({ data }: { data: ReportData }) {
                         <td className={`py-1 font-medium ${r.isGroup ? "" : "pl-4"}`}>{r.name}</td>
                         <td className="py-1 text-right tabular-nums">{r.actual}</td>
                         <td className="py-1 text-right tabular-nums text-slate-500">{r.budget}</td>
-                        <td className="py-1 text-right tabular-nums">{r.pct}</td>
+                        <td
+                          className="py-1 text-right tabular-nums"
+                          style={r.bg ? { backgroundColor: r.bg } : undefined}
+                        >
+                          {r.pct}
+                        </td>
                         {data.budget!.showProjection && (
-                          <td className={`py-1 text-right tabular-nums ${r.breach ? "font-semibold text-red-600" : "text-slate-500"}`}>
+                          <td
+                            className={`py-1 text-right tabular-nums ${r.breach ? "font-semibold text-red-600" : "text-slate-500"}`}
+                            style={r.projBg ? { backgroundColor: r.projBg } : undefined}
+                          >
                             {r.breach ? "⚠ " : ""}{r.proj ?? "–"}
                           </td>
                         )}
@@ -458,9 +468,17 @@ export function ReportBuilder({ data }: { data: ReportData }) {
                       <td className="py-1">Summe {title}</td>
                       <td className="py-1 text-right tabular-nums">{g.sumActual}</td>
                       <td className="py-1 text-right tabular-nums">{g.sumBudget}</td>
-                      <td className="py-1 text-right tabular-nums">{g.sumPct}</td>
+                      <td
+                        className="py-1 text-right tabular-nums"
+                        style={g.sumBg ? { backgroundColor: g.sumBg } : undefined}
+                      >
+                        {g.sumPct}
+                      </td>
                       {data.budget!.showProjection && (
-                        <td className={`py-1 text-right tabular-nums ${g.sumBreach ? "font-semibold text-red-600" : ""}`}>
+                        <td
+                          className={`py-1 text-right tabular-nums ${g.sumBreach ? "font-semibold text-red-600" : ""}`}
+                          style={g.sumProjBg ? { backgroundColor: g.sumProjBg } : undefined}
+                        >
                           {g.sumBreach ? "⚠ " : ""}{g.sumProj ?? "–"}
                         </td>
                       )}

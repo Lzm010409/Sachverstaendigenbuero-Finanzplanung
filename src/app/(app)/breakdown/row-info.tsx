@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCents } from "@/lib/money";
+import { budgetCellColor } from "@/lib/budget-color";
 
 interface Period {
   key: string;
@@ -65,6 +66,9 @@ export function BreakdownRowInfo({
     const better = isIncome ? ist > periodBudget : ist < periodBudget;
     return worse ? "text-red-600" : better ? "text-emerald-600" : "text-slate-500";
   };
+  // Gleiche Farbskala wie in der Tabelle dahinter.
+  const cellBg = (ist: number) => (ist === 0 ? undefined : budgetCellColor(ist, periodBudget, isIncome));
+  const jahrBg = budgetCellColor(yearActual, annualBudget, isIncome);
   const deltaVal = (ist: number) => {
     const d = ist - periodBudget;
     return `${d > 0 ? "+" : ""}${formatCents(d)}`;
@@ -99,7 +103,12 @@ export function BreakdownRowInfo({
                     <tr key={p.key} className="border-b border-slate-50">
                       <td className="py-1 text-slate-600">{p.label}</td>
                       <td className="py-1 text-right tabular-nums text-slate-500">{hasBudget ? formatCents(periodBudget) : "–"}</td>
-                      <td className="py-1 text-right tabular-nums">{ist === 0 ? <span className="text-slate-300">–</span> : formatCents(ist)}</td>
+                      <td
+                        className="py-1 text-right tabular-nums"
+                        style={cellBg(ist) ? { backgroundColor: cellBg(ist)! } : undefined}
+                      >
+                        {ist === 0 ? <span className="text-slate-300">–</span> : formatCents(ist)}
+                      </td>
                       <td className={`py-1 text-right tabular-nums ${deltaClass(ist)}`}>{hasBudget ? deltaVal(ist) : "–"}</td>
                     </tr>
                   );
@@ -110,7 +119,12 @@ export function BreakdownRowInfo({
                   <td className="py-1">Jahr</td>
                   <td className="py-1 text-right tabular-nums">{hasBudget ? formatCents(annualBudget) : "–"}</td>
                   <td className="py-1 text-right tabular-nums">{formatCents(yearActual)}</td>
-                  <td className="py-1 text-right tabular-nums">{budgetPct != null ? `${Math.round(budgetPct * 100)} %` : "–"}</td>
+                  <td
+                    className="py-1 text-right tabular-nums"
+                    style={jahrBg ? { backgroundColor: jahrBg } : undefined}
+                  >
+                    {budgetPct != null ? `${Math.round(budgetPct * 100)} %` : "–"}
+                  </td>
                 </tr>
               </tfoot>
             </table>

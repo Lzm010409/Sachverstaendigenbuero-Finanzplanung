@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { budgetCellColor } from "@/lib/budget-color";
 import { useEffect, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCents } from "@/lib/money";
@@ -140,13 +141,24 @@ function DetailView({ detail, query }: { detail: CellDetail; query: Record<strin
   const { ist, soll } = detail;
   const hasSoll = soll.budget != null || soll.planned.length > 0 || soll.open.length > 0;
   const abw = ist.total - (soll.budget ?? 0);
+  // Farbskala Ist gegen Soll – dieselbe wie in den Tabellen. Die Richtung
+  // ergibt sich aus dem Vorzeichen des Solls (Einzahlung vs. Auszahlung).
+  const sollBetrag = soll.budget != null ? Math.abs(soll.budget) : 0;
+  const istBg = budgetCellColor(Math.abs(ist.total), sollBetrag, (soll.budget ?? 0) > 0);
+  const sollPct = sollBetrag > 0 ? Math.round((Math.abs(ist.total) / sollBetrag) * 100) : null;
   const href = drilldownHref(query);
   return (
     <div className="space-y-2">
       <div>
-        <div className="mb-1 flex items-center justify-between text-slate-500">
+        <div
+          className="mb-1 flex items-center justify-between rounded px-1 py-0.5 text-slate-500"
+          style={istBg ? { backgroundColor: istBg } : undefined}
+        >
           <span className="font-medium uppercase tracking-wide">Ist (gebucht)</span>
-          <span className="tabular-nums">{money(ist.total)}</span>
+          <span className="tabular-nums">
+            {money(ist.total)}
+            {sollPct != null && <span className="ml-1 text-slate-500">· {sollPct} %</span>}
+          </span>
         </div>
         {ist.items.length === 0 ? (
           <p className="text-slate-400">keine Buchungen</p>
@@ -194,7 +206,10 @@ function DetailView({ detail, query }: { detail: CellDetail; query: Record<strin
       </div>
 
       {soll.budget != null && (
-        <div className="flex items-center justify-between border-t border-slate-100 pt-2 font-medium text-slate-700">
+        <div
+          className="flex items-center justify-between rounded border-t border-slate-100 px-1 pt-2 font-medium text-slate-700"
+          style={istBg ? { backgroundColor: istBg } : undefined}
+        >
           <span>Abweichung Ist − Budget</span>
           <span className="tabular-nums">{money(abw)}</span>
         </div>

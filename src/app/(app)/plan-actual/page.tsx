@@ -3,6 +3,7 @@ import { getPlanVsActual } from "@/lib/queries";
 import { formatCents } from "@/lib/money";
 import { CellHover } from "@/components/cell-hover";
 import { GroupTableSection, Chevron } from "@/components/category-group";
+import { budgetCellColor } from "@/lib/budget-color";
 import { groupRowsByCategoryGroup, sumBy } from "@/lib/category-tree";
 import type { PlanActualRow } from "@/lib/queries";
 
@@ -26,12 +27,25 @@ function PlanActualDataRow({
   const diff = r.actual - r.planned;
   const q = { cat: r.categoryId ?? "none", from: fromISO, to: toISO };
   const title = `${r.categoryName} · ${monthLabel}`;
+  // Farbskala: Ist gegen Plan – bei Ausgaben ist weniger besser, bei
+  // Einnahmen mehr. Ohne Plan bleibt die Zelle neutral.
+  const bg = budgetCellColor(Math.abs(r.actual), Math.abs(r.planned), r.kind === "INCOME");
   return (
     <tr className="border-b border-slate-50">
       <td className={`td font-medium ${indent ? "pl-6" : ""}`}>{r.categoryName}</td>
       <CellHover query={q} title={title} className="td text-right">{formatCents(r.planned)}</CellHover>
-      <CellHover query={q} title={title} className="td text-right">{formatCents(r.actual)}</CellHover>
-      <td className={`td text-right font-semibold ${diff < 0 ? "text-red-600" : "text-emerald-600"}`}>
+      <CellHover
+        query={q}
+        title={title}
+        className="td text-right"
+        style={bg ? { backgroundColor: bg } : undefined}
+      >
+        {formatCents(r.actual)}
+      </CellHover>
+      <td
+        className={`td text-right font-semibold ${diff < 0 ? "text-red-600" : "text-emerald-600"}`}
+        style={bg ? { backgroundColor: bg } : undefined}
+      >
         {diff > 0 ? "+" : ""}
         {formatCents(diff)}
       </td>
@@ -130,6 +144,11 @@ export default async function PlanActualPage({
                 const gPlanned = sumBy(g.rows, (r) => r.planned);
                 const gActual = sumBy(g.rows, (r) => r.actual);
                 const gDiff = gActual - gPlanned;
+                const gBg = budgetCellColor(
+                  Math.abs(gActual),
+                  Math.abs(gPlanned),
+                  g.group.kind === "INCOME",
+                );
                 return (
                   <GroupTableSection
                     key={g.group.id}
@@ -147,8 +166,16 @@ export default async function PlanActualPage({
                           <span className="ml-2 text-xs font-normal text-slate-400">({g.rows.length})</span>
                         </td>
                         <td className="td text-right tabular-nums">{formatCents(gPlanned)}</td>
-                        <td className="td text-right tabular-nums">{formatCents(gActual)}</td>
-                        <td className={`td text-right ${gDiff < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                        <td
+                          className="td text-right tabular-nums"
+                          style={gBg ? { backgroundColor: gBg } : undefined}
+                        >
+                          {formatCents(gActual)}
+                        </td>
+                        <td
+                          className={`td text-right ${gDiff < 0 ? "text-red-600" : "text-emerald-600"}`}
+                          style={gBg ? { backgroundColor: gBg } : undefined}
+                        >
                           {gDiff > 0 ? "+" : ""}
                           {formatCents(gDiff)}
                         </td>

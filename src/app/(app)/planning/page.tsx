@@ -1,9 +1,10 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { GROUP_PREFIX } from "@/lib/category-tree";
 import { startOfDayUTC, todayUTC } from "@/lib/dates";
 import { Pagination, clampPageSize } from "@/components/pagination";
 import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
-import { CategoryOptions } from "@/components/category-select";
+import { CategoryOptions, CategoryFilterOptions } from "@/components/category-select";
 import { SortableTh } from "@/components/sortable-th";
 import { PlannedForm } from "./planned-form";
 import { PlannedRow } from "./planned-row";
@@ -43,7 +44,13 @@ export default async function PlanningPage({
   // Filter → WHERE
   const where: Prisma.PlannedItemWhereInput = {};
   if (sp.cat === "none") where.categoryId = null;
-  else if (sp.cat) where.categoryId = sp.cat;
+  else if (sp.cat?.startsWith(GROUP_PREFIX)) {
+    const kinder = await prisma.category.findMany({
+      where: { parentId: sp.cat.slice(GROUP_PREFIX.length) },
+      select: { id: true },
+    });
+    where.categoryId = { in: kinder.map((k) => k.id) };
+  } else if (sp.cat) where.categoryId = sp.cat;
   if (sp.dir === "in") where.amount = { gt: 0 };
   else if (sp.dir === "out") where.amount = { lt: 0 };
   if (sp.rec && (RECURRENCES as readonly string[]).includes(sp.rec)) {
@@ -74,7 +81,7 @@ export default async function PlanningPage({
   ]);
 
   const pages = Math.ceil(totalCount / pageSize);
-  const catOptions = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  const catOptions = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup }));
   const hasFilter = !!(sp.cat || sp.dir || sp.rec || sp.state || sp.q);
   const sizeParam = pageSize !== 50 ? String(pageSize) : undefined;
   const filterParams = { cat: sp.cat, dir: sp.dir, rec: sp.rec, state: sp.state, q: sp.q, size: sizeParam };
@@ -102,7 +109,7 @@ export default async function PlanningPage({
           <select name="cat" defaultValue={sp.cat ?? ""} className="input w-auto">
             <option value="">alle</option>
             <option value="none">ohne Kategorie</option>
-            <CategoryOptions categories={catOptions} />
+            <CategoryFilterOptions categories={catOptions} />
           </select>
         </div>
         <div>

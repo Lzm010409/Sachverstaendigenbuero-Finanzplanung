@@ -5,13 +5,15 @@ import { INCLUDED_ACCOUNT, getTransferCategoryIds } from "@/lib/queries";
 import { getForecastBudgetItems } from "@/lib/budgets";
 import { occurrencesBetween } from "@/lib/recurrence";
 import { budgetAnnualCents, type BudgetPeriod } from "@/lib/budget";
+import { GROUP_PREFIX } from "@/lib/category-tree";
 
 export const dynamic = "force-dynamic";
 
 // Liefert für eine Tabellen-Zelle (Kategorie × Zeitraum) die transaktionsgenauen
 // IST-Bewegungen und den SOLL-/Geplant-Zustand (Budget + Planposten + offene
 // Posten). Parameter:
-//   cat  = Kategorie-ID | "none" (ohne Kategorie) | "all" (alle, für die Wochenvorschau)
+//   cat  = Kategorie-ID | "g:<id>" (ganze Überkategorie) | "none" (ohne Kategorie)
+//          | "all" (alle, für die Wochenvorschau)
 //   from = Bereichsstart (yyyy-mm-dd), to = Bereichsende inklusiv (yyyy-mm-dd)
 //   dir  = optional "in" | "out" (nur Zu- bzw. Abflüsse)
 // Wird beim Hover geladen (fetch) und clientseitig gecacht.
@@ -41,7 +43,21 @@ export async function GET(req: NextRequest) {
   const periodDays = Math.max(1, Math.round((nextDay.getTime() - start.getTime()) / 86_400_000));
 
   const all = cat === "all";
+  // "g:<id>" adressiert eine ganze Überkategorie: es zählen alle ihre
+  // Kindkategorien. Sonst genau eine Kategorie (oder "ohne Kategorie").
+  const groupId = cat.startsWith(GROUP_PREFIX) ? cat.slice(GROUP_PREFIX.length) : null;
+  const groupChildIds = groupId
+    ? (await prisma.category.findMany({ where: { parentId: groupId }, select: { id: true } })).map((c) => c.id)
+    : null;
   const catId = all ? undefined : cat === "none" || cat === "" ? null : cat;
+  /** where-Fragment für die Kategorieauswahl (Einzelkategorie oder Überkategorie). */
+  const catWhere: { categoryId?: string | null | { in: string[] } } = all
+    ? {}
+    : groupChildIds
+      ? { categoryId: { in: groupChildIds } }
+      : { categoryId: catId };
+  /** true, sobald überhaupt eine Kategorieauswahl vorliegt. */
+  const hasCatSelection = groupChildIds ? groupChildIds.length > 0 : !!catId;
   const transferIds = await getTransferCategoryIds();
   const sign = (amt: number) => (dir === "in" ? amt > 0 : dir === "out" ? amt < 0 : true);
   const notTransfer = (id: string | null) => !(id && transferIds.has(id));
@@ -51,7 +67,7 @@ export async function GET(req: NextRequest) {
     where: {
       bookingDate: { gte: start, lt: nextDay },
       account: INCLUDED_ACCOUNT,
-      ...(all ? {} : { categoryId: catId }),
+      ...catWhere,
     },
     select: { bookingDate: true, counterparty: true, purpose: true, amount: true, categoryId: true },
     orderBy: { bookingDate: "asc" },
@@ -96,19 +112,21 @@ export async function GET(req: NextRequest) {
       if (!sign(amt)) continue;
       open.push({ date: iso(o.dueDate), label: (o.counterparty || o.reference || "offener Posten").slice(0, 60), amount: amt });
     }
-  } else if (catId) {
+  } else if (hasCatSelection) {
     const [c, budgets, items, ois] = await Promise.all([
-      prisma.category.findUnique({ where: { id: catId }, select: { kind: true } }),
+      // Art (Einnahme/Ausgabe): bei einer Überkategorie deren eigene Art –
+      // Über- und Unterkategorie sind immer gleichartig.
+      prisma.category.findUnique({ where: { id: groupId ?? catId! }, select: { kind: true } }),
       prisma.budget.findMany({
-        where: { deletedAt: null, active: true, categoryId: catId },
+        where: { deletedAt: null, active: true, ...catWhere },
         select: { amount: true, period: true, startDate: true, endDate: true },
       }),
       prisma.plannedItem.findMany({
-        where: { active: true, categoryId: catId },
+        where: { active: true, ...catWhere },
         select: { name: true, amount: true, recurrence: true, interval: true, startDate: true, endDate: true },
       }),
       prisma.openItem.findMany({
-        where: { paid: false, categoryId: catId, dueDate: { gte: start, lt: nextDay } },
+        where: { paid: false, ...catWhere, dueDate: { gte: start, lt: nextDay } },
         select: { kind: true, amount: true, paidAmount: true, dueDate: true, counterparty: true, reference: true },
       }),
     ]);

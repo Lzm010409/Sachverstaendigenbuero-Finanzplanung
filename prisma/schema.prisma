@@ -101,9 +101,15 @@ model Category {
   name         String
   kind         CategoryKind
   color        String        @default("#64748b")
+  // Überkategorie ("Klammer") zur Bündelung mehrerer Kategorien. Genau eine
+  // Ebene: eine Überkategorie hat selbst keinen parentId.
   parentId     String?
   parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children     Category[]    @relation("CategoryTree")
+  // true = Überkategorie. Sie ist reine Gliederung und NICHT bebuchbar: keine
+  // Umsätze, Regeln, Planposten, offenen Posten oder Budgets zeigen auf sie.
+  // Ihre Summen ergeben sich ausschließlich aus den Kindkategorien.
+  isGroup      Boolean       @default(false)
   rules        Rule[]
   transactions Transaction[]
   plannedItems PlannedItem[]
@@ -120,6 +126,7 @@ model Category {
 
   @@index([kind])
   @@index([deletedAt])
+  @@index([parentId])
 }
 
 // Budget / geplante Ausgabe – bewusst von der Kategorie ENTKOPPELT (eigenes

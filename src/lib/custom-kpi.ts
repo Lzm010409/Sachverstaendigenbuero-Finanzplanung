@@ -5,7 +5,9 @@ import { todayUTC, addDays, addMonths, startOfDayUTC } from "./dates";
 export type Metric = "net" | "income" | "expense" | "volume" | "count" | "avg";
 export type RangeKind = "mtd" | "last_month" | "ytd" | "last_year" | "last_30d" | "last_90d" | "rolling_12m" | "custom";
 export type Display = "number" | "bar" | "line" | "pie";
-export type GroupBy = "none" | "month" | "week" | "category";
+// "categoryGroup" fasst je Überkategorie zusammen (Kategorien ohne
+// Überkategorie bleiben als eigene Punkte stehen).
+export type GroupBy = "none" | "month" | "week" | "category" | "categoryGroup";
 export type TileSize = "sm" | "md" | "lg" | "xl";
 
 export interface CustomKpiDef {
@@ -163,12 +165,23 @@ export async function computeCustomKpi(def: CustomKpiDef, now = todayUTC()): Pro
 
   // Datenreihe (Balken/Linie/Kreis)
   let points: KpiPoint[] = [];
-  if (def.groupBy === "category") {
-    const cats = await prisma.category.findMany({ where: { deletedAt: null }, select: { id: true, name: true, color: true } });
+  if (def.groupBy === "category" || def.groupBy === "categoryGroup") {
+    const cats = await prisma.category.findMany({
+      where: { deletedAt: null },
+      select: { id: true, name: true, color: true, parentId: true },
+    });
     const info = new Map(cats.map((c) => [c.id, c]));
+    // Bei "categoryGroup" zählt die Überkategorie als Schlüssel; Kategorien
+    // ohne Überkategorie bleiben für sich. Doppelzählung ist ausgeschlossen,
+    // weil auf eine Überkategorie selbst nichts gebucht werden kann.
+    const schluessel = (catId: string | null) => {
+      if (!catId) return "__none__";
+      if (def.groupBy !== "categoryGroup") return catId;
+      return info.get(catId)?.parentId ?? catId;
+    };
     const byCat = new Map<string, Tx[]>();
     for (const t of inMain) {
-      const k = t.categoryId ?? "__none__";
+      const k = schluessel(t.categoryId);
       if (!byCat.has(k)) byCat.set(k, []);
       byCat.get(k)!.push(t);
     }

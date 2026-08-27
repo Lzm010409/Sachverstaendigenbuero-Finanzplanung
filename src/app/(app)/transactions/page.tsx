@@ -1,13 +1,14 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { GROUP_PREFIX } from "@/lib/category-tree";
 import { formatCents } from "@/lib/money";
 import { Pagination, clampPageSize } from "@/components/pagination";
 import { PageAlerts } from "@/components/page-alerts";
 import { TransactionsTable, type TxRow } from "./transactions-table";
 import type { CatOpt } from "@/components/category-select";
 import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
-import { CategoryOptions } from "@/components/category-select";
+import { CategoryOptions, CategoryFilterOptions } from "@/components/category-select";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,14 @@ export default async function TransactionsPage({
   if (sp.account) where.accountId = sp.account;
   // Kategorie-Filter: "none" = nicht zugeordnet, sonst konkrete Kategorie-ID.
   if (sp.cat === "none" || sp.state === "uncategorized") where.categoryId = null;
-  else if (sp.cat) where.categoryId = sp.cat;
+  else if (sp.cat?.startsWith(GROUP_PREFIX)) {
+    // Ganze Überkategorie: über alle zugehörigen Kindkategorien filtern.
+    const kinder = await prisma.category.findMany({
+      where: { parentId: sp.cat.slice(GROUP_PREFIX.length) },
+      select: { id: true },
+    });
+    where.categoryId = { in: kinder.map((k) => k.id) };
+  } else if (sp.cat) where.categoryId = sp.cat;
   if (sp.q) {
     where.OR = [
       { counterparty: { contains: sp.q, mode: "insensitive" } },
@@ -57,7 +65,7 @@ export default async function TransactionsPage({
   ]);
 
   const pages = Math.ceil(totalCount / pageSize);
-  const catOptions: CatOpt[] = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  const catOptions: CatOpt[] = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup }));
   const rows: TxRow[] = transactions.map((t) => ({
     id: t.id,
     dateLabel: new Date(t.bookingDate).toLocaleDateString("de-DE"),
@@ -101,7 +109,7 @@ export default async function TransactionsPage({
           <select name="cat" defaultValue={sp.cat ?? ""} className="input w-auto">
             <option value="">alle</option>
             <option value="none">nicht zugeordnet</option>
-            <CategoryOptions categories={catOptions} />
+            <CategoryFilterOptions categories={catOptions} />
           </select>
         </div>
         <div className="min-w-[180px] flex-1">

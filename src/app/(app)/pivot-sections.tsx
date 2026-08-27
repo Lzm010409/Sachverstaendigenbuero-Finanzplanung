@@ -5,6 +5,11 @@ import { useEffect, useReducer, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { formatCents } from "@/lib/money";
 import { budgetCellColor } from "@/lib/budget-color";
+import { GroupTableSection, Chevron } from "@/components/category-group";
+import { groupRowsByCategoryGroup, sumBy, type CatNode } from "@/lib/category-tree";
+
+/** localStorage-Schlüssel für den Aufklapp-Zustand der Monatsmatrix. */
+const STORE_KEY = "cat:open:pivot";
 
 interface Month {
   key: string;
@@ -52,10 +57,12 @@ export function PivotSections({
   months,
   incomeRows,
   expenseRows,
+  categories,
 }: {
   months: Month[];
   incomeRows: PivotRow[];
   expenseRows: PivotRow[];
+  categories: CatNode[];
 }) {
   const cache = useRef<Map<string, CacheVal>>(new Map());
   const [, force] = useReducer((x) => x + 1, 0);
@@ -131,6 +138,53 @@ export function PivotSections({
 
   const detail = pop ? cache.current.get(pop.key) : undefined;
 
+  // Zeilen nach Überkategorie bündeln; die Kopfzeile trägt die Monatssummen.
+  const renderGrouped = (rows: PivotRow[]) =>
+    groupRowsByCategoryGroup(rows, (r) => r.categoryId, categories).map((g) => {
+      const body = g.rows.map(renderRow);
+      if (!g.group) return <tbody key="ohne">{body}</tbody>;
+      const isIncome = g.group.kind === "INCOME";
+      return (
+        <GroupTableSection
+          key={g.group.id}
+          storeKey={STORE_KEY}
+          groupId={g.group.id}
+          header={
+            <tr className="border-b border-slate-100 bg-slate-50/80 font-semibold">
+              <td className="sticky left-0 z-10 bg-slate-50 px-3 py-1.5 text-sm text-slate-800">
+                <Chevron className="mr-2 align-middle" />
+                <span
+                  className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                  style={{ backgroundColor: g.group.color }}
+                />
+                {g.group.name}
+                <span className="ml-2 text-xs font-normal text-slate-400">({g.rows.length})</span>
+              </td>
+              {months.map((m, i) => {
+                const v = sumBy(g.rows, (r) => r.values[i] ?? 0);
+                return (
+                  <td
+                    key={m.key}
+                    className={`whitespace-nowrap px-3 py-1.5 text-right text-sm tabular-nums ${isIncome ? "text-emerald-700" : "text-red-600"} ${m.isCurrent ? "bg-brand/5" : ""}`}
+                  >
+                    {v === 0 ? <span className="text-slate-300">–</span> : eur(v)}
+                  </td>
+                );
+              })}
+              <td className="px-3 py-1.5 text-right text-sm tabular-nums text-slate-500">
+                {(() => {
+                  const b = sumBy(g.rows, (r) => r.annualBudget);
+                  return b > 0 ? eur(isIncome ? b : -b) : "–";
+                })()}
+              </td>
+            </tr>
+          }
+        >
+          {body}
+        </GroupTableSection>
+      );
+    });
+
   return (
     <>
       <tbody>
@@ -139,22 +193,22 @@ export function PivotSections({
             Einnahmen
           </td>
         </tr>
-        {incomeRows.length === 0 ? (
+        {incomeRows.length === 0 && (
           <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 2}>—</td></tr>
-        ) : (
-          incomeRows.map(renderRow)
         )}
+      </tbody>
+      {renderGrouped(incomeRows)}
+      <tbody>
         <tr className="bg-red-50/60">
           <td className="sticky left-0 z-10 bg-red-50 px-3 py-1.5 text-xs font-semibold uppercase text-red-700" colSpan={months.length + 2}>
             Ausgaben
           </td>
         </tr>
-        {expenseRows.length === 0 ? (
+        {expenseRows.length === 0 && (
           <tr><td className="px-3 py-1.5 text-sm text-slate-400" colSpan={months.length + 2}>—</td></tr>
-        ) : (
-          expenseRows.map(renderRow)
         )}
       </tbody>
+      {renderGrouped(expenseRows)}
 
       {pop && mounted &&
         createPortal(

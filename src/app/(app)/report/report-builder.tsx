@@ -30,7 +30,8 @@ export interface ReportData {
 }
 
 interface BudgetGroup {
-  rows: { name: string; actual: string; budget: string; pct: string; proj: string | null; breach: boolean }[];
+  // isGroup = Summenzeile einer Überkategorie (im Report immer ausgeschrieben).
+  rows: { name: string; actual: string; budget: string; pct: string; proj: string | null; breach: boolean; isGroup?: boolean }[];
   sumActual: string;
   sumBudget: string;
   sumPct: string;
@@ -441,8 +442,8 @@ export function ReportBuilder({ data }: { data: ReportData }) {
                   <tbody key={title}>
                     <tr className="bg-slate-50"><td colSpan={data.budget!.showProjection ? 5 : 4} className="py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">{title}</td></tr>
                     {g.rows.map((r) => (
-                      <tr key={r.name} className="border-b border-slate-50">
-                        <td className="py-1 font-medium">{r.name}</td>
+                      <tr key={r.name} className={`border-b border-slate-50 ${r.isGroup ? "bg-slate-50/70 font-semibold" : ""}`}>
+                        <td className={`py-1 font-medium ${r.isGroup ? "" : "pl-4"}`}>{r.name}</td>
                         <td className="py-1 text-right tabular-nums">{r.actual}</td>
                         <td className="py-1 text-right tabular-nums text-slate-500">{r.budget}</td>
                         <td className="py-1 text-right tabular-nums">{r.pct}</td>

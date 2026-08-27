@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { deleteCategory, purgeCategory, restoreCategory, toggleCategoryTransfer } from "@/app/actions/categories";
-import { ApplyRulesButton, CategoryForm, ResetCategoriesButton, RuleForm, type CatOption } from "./category-forms";
+import { ApplyRulesButton, CategoryForm, CategoryGroupForm, GroupSuggestion, ParentSelect, ResetCategoriesButton, RuleForm, type CatOption } from "./category-forms";
+import { schlageUeberkategorienVor } from "@/lib/category-group-suggest";
+import { GroupTableSection, Chevron, StopClick } from "@/components/category-group";
+import { groupRowsByCategoryGroup, sumBy, type CatNode } from "@/lib/category-tree";
 import { RuleRow } from "./rule-row";
 import type { AccountOpt } from "./rule-builder";
 import { isValidTree, type Node } from "@/lib/rule-expr";
@@ -18,22 +21,88 @@ type CatRow = {
   kind: "INCOME" | "EXPENSE";
   color: string;
   isTransfer: boolean;
+  parentId: string | null;
+  isGroup: boolean;
   _count: { transactions: number; budgets: number };
 };
+
+/** localStorage-Schlüssel für den Aufklapp-Zustand auf dieser Seite. */
+const STORE_KEY = "cat:open:categories";
+
+/** Eine Kategoriezeile (auch als Kind einer Überkategorie verwendbar). */
+function CategoryRow({
+  c,
+  groups,
+  indent,
+}: {
+  c: CatRow;
+  groups: CatNode[];
+  indent?: boolean;
+}) {
+  return (
+    <tr className="border-b border-slate-50">
+      <td className={`td font-medium ${indent ? "pl-8" : ""}`}>
+        <span className="mr-2 inline-block h-3 w-3 rounded-full align-middle" style={{ backgroundColor: c.color }} />
+        {c.name}
+        {c.isTransfer && <span className="badge ml-2 bg-slate-100 text-slate-500">neutral · Transfer</span>}
+      </td>
+      <td className="td text-right text-slate-500">{c._count.transactions}</td>
+      <td className="td text-right text-slate-500">
+        {c._count.budgets > 0 ? (
+          <Link href="/budgets" className="text-brand hover:underline">{c._count.budgets}</Link>
+        ) : (
+          <span className="text-slate-300">–</span>
+        )}
+      </td>
+      <td className="td">
+        <ParentSelect id={c.id} parentId={c.parentId} groups={groups.filter((g) => g.kind === c.kind)} />
+      </td>
+      <td className="td text-right">
+        <div className="flex items-center justify-end gap-3">
+          <form action={toggleCategoryTransfer}>
+            <input type="hidden" name="id" value={c.id} />
+            <button className="text-xs text-slate-400 hover:text-brand" title="Als neutralen Geldtransfer markieren (zählt nicht als Ein-/Ausgabe)">
+              {c.isTransfer ? "kein Transfer" : "als Transfer"}
+            </button>
+          </form>
+          <form action={deleteCategory}>
+            <input type="hidden" name="id" value={c.id} />
+            <button className="text-xs text-slate-400 hover:text-red-600" title="in den Papierkorb">
+              löschen
+            </button>
+          </form>
+        </div>
+      </td>
+    </tr>
+  );
+}
 
 function CategoryTable({
   title,
   rows,
+  groups,
   tone,
   sort,
   dir,
 }: {
   title: string;
   rows: CatRow[];
+  groups: CatNode[];
   tone: "in" | "out";
   sort: string;
   dir: "asc" | "desc";
 }) {
+  // Kategorien ihren Überkategorien zuordnen; Zeilen ohne Überkategorie
+  // landen in einem eigenen Block ganz unten.
+  const grouped = groupRowsByCategoryGroup(rows, (r) => r.id, withParents(rows, groups));
+  // Noch leere Überkategorien ergänzen – sonst wäre eine gerade angelegte
+  // Überkategorie nirgends sichtbar und nicht mehr löschbar.
+  const belegt = new Set(grouped.map((g) => g.group?.id).filter(Boolean));
+  const leere = groups
+    .filter((g) => g.kind === (tone === "in" ? "INCOME" : "EXPENSE") && !belegt.has(g.id))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"))
+    .map((g) => ({ group: g, rows: [] as CatRow[] }));
+  const alle = [...grouped.filter((g) => g.group), ...leere, ...grouped.filter((g) => !g.group)];
   return (
     <div>
       <h3 className={`mb-2 text-xs font-semibold uppercase tracking-wide ${tone === "in" ? "text-emerald-700" : "text-red-700"}`}>
@@ -49,49 +118,92 @@ function CategoryTable({
                 <SortableTh col="name" label="Kategorie" sort={sort} dir={dir} basePath="/categories" />
                 <SortableTh col="transactions" label="Umsätze" sort={sort} dir={dir} basePath="/categories" align="right" />
                 <SortableTh col="budgets" label="Budgets" sort={sort} dir={dir} basePath="/categories" align="right" />
+                <th className="th">Überkategorie</th>
                 <th className="th"></th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((c) => (
-                <tr key={c.id} className="border-b border-slate-50">
-                  <td className="td font-medium">
-                    <span className="mr-2 inline-block h-3 w-3 rounded-full align-middle" style={{ backgroundColor: c.color }} />
-                    {c.name}
-                    {c.isTransfer && <span className="badge ml-2 bg-slate-100 text-slate-500">neutral · Transfer</span>}
-                  </td>
-                  <td className="td text-right text-slate-500">{c._count.transactions}</td>
-                  <td className="td text-right text-slate-500">
-                    {c._count.budgets > 0 ? (
-                      <Link href="/budgets" className="text-brand hover:underline">{c._count.budgets}</Link>
-                    ) : (
-                      <span className="text-slate-300">–</span>
-                    )}
-                  </td>
-                  <td className="td text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <form action={toggleCategoryTransfer}>
-                        <input type="hidden" name="id" value={c.id} />
-                        <button className="text-xs text-slate-400 hover:text-brand" title="Als neutralen Geldtransfer markieren (zählt nicht als Ein-/Ausgabe)">
-                          {c.isTransfer ? "kein Transfer" : "als Transfer"}
-                        </button>
-                      </form>
-                      <form action={deleteCategory}>
-                        <input type="hidden" name="id" value={c.id} />
-                        <button className="text-xs text-slate-400 hover:text-red-600" title="in den Papierkorb">
-                          löschen
-                        </button>
-                      </form>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
+            {alle.map((g) =>
+              g.group ? (
+                <GroupTableSection
+                  key={g.group.id}
+                  storeKey={STORE_KEY}
+                  groupId={g.group.id}
+                  header={
+                    <tr className="border-b border-slate-100 bg-slate-50/70">
+                      <td className="td font-semibold text-slate-800">
+                        <Chevron className="mr-2 align-middle" />
+                        <span
+                          className="mr-2 inline-block h-3 w-3 rounded-full align-middle"
+                          style={{ backgroundColor: g.group.color }}
+                        />
+                        {g.group.name}
+                        <span className="ml-2 text-xs font-normal text-slate-400">
+                          {g.rows.length} {g.rows.length === 1 ? "Kategorie" : "Kategorien"}
+                        </span>
+                      </td>
+                      <td className="td text-right font-semibold text-slate-700">
+                        {sumBy(g.rows, (r) => r._count.transactions)}
+                      </td>
+                      <td className="td text-right font-semibold text-slate-700">
+                        {sumBy(g.rows, (r) => r._count.budgets) || <span className="text-slate-300">–</span>}
+                      </td>
+                      <td className="td">
+                        <span className="badge bg-brand/10 text-brand">Überkategorie</span>
+                      </td>
+                      <td className="td text-right">
+                        <StopClick className="flex items-center justify-end gap-3">
+                          <form action={deleteCategory}>
+                            <input type="hidden" name="id" value={g.group.id} />
+                            <button
+                              className="text-xs text-slate-400 hover:text-red-600"
+                              title="Überkategorie auflösen – die enthaltenen Kategorien bleiben erhalten"
+                            >
+                              auflösen
+                            </button>
+                          </form>
+                        </StopClick>
+                      </td>
+                    </tr>
+                  }
+                >
+                  {g.rows.length === 0 ? (
+                    <tr>
+                      <td className="td pl-8 text-xs text-slate-400" colSpan={5}>
+                        Noch keine Kategorien zugeordnet – Zuordnung in der Spalte „Überkategorie".
+                      </td>
+                    </tr>
+                  ) : (
+                    g.rows.map((c) => <CategoryRow key={c.id} c={c} groups={groups} indent />)
+                  )}
+                </GroupTableSection>
+              ) : (
+                <tbody key="ohne">
+                  {g.rows.map((c) => (
+                    <CategoryRow key={c.id} c={c} groups={groups} />
+                  ))}
+                </tbody>
+              ),
+            )}
           </table>
         </div>
       )}
     </div>
   );
+}
+
+/** Hilfsliste für die Zuordnung: Kategorien + Überkategorien als CatNode. */
+function withParents(rows: CatRow[], groups: CatNode[]): CatNode[] {
+  return [
+    ...rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      kind: r.kind,
+      color: r.color,
+      parentId: r.parentId,
+      isGroup: r.isGroup,
+    })),
+    ...groups,
+  ];
 }
 
 export default async function CategoriesPage({
@@ -133,9 +245,20 @@ export default async function CategoriesPage({
         })
       : rows;
 
-  const income = sortCats(active.filter((c) => c.kind === "INCOME"));
-  const expense = sortCats(active.filter((c) => c.kind === "EXPENSE"));
-  const catOptions: CatOption[] = active.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  // Überkategorien sind reine Gliederung – sie erscheinen als Klammer, nicht
+  // als eigene Zeile in der Kategorieliste.
+  const groups: CatNode[] = active
+    .filter((c) => c.isGroup)
+    .map((c) => ({ id: c.id, name: c.name, kind: c.kind, color: c.color, parentId: c.parentId, isGroup: true }));
+  const leaves = active.filter((c) => !c.isGroup);
+  const income = sortCats(leaves.filter((c) => c.kind === "INCOME"));
+  const expense = sortCats(leaves.filter((c) => c.kind === "EXPENSE"));
+  const catOptions: CatOption[] = active.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup }));
+  // Vorschlag für Überkategorien aus den vorhandenen Kategorienamen ableiten.
+  // Wird nur angezeigt, solange es etwas zu gruppieren gibt.
+  const vorschlaege = schlageUeberkategorienVor(
+    active.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup })),
+  );
   const accountOptions: AccountOpt[] = accounts.map((a) => ({ id: a.id, name: a.name }));
   const now = Date.now();
 
@@ -143,10 +266,33 @@ export default async function CategoriesPage({
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">Kategorien &amp; Regeln</h1>
 
-      <div className="card">
-        <h2 className="mb-4 text-sm font-semibold text-slate-700">Neue Kategorie</h2>
-        <CategoryForm />
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="card">
+          <h2 className="mb-4 text-sm font-semibold text-slate-700">Neue Kategorie</h2>
+          <CategoryForm groups={groups} />
+        </div>
+        <div className="card">
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">Neue Überkategorie</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Bündelt mehrere Kategorien zu einer Klammer. Auf eine Überkategorie wird nichts gebucht –
+            keine Umsätze, Regeln, Planposten oder Budgets. Ihre Summe ergibt sich aus den enthaltenen
+            Kategorien.
+          </p>
+          <CategoryGroupForm />
+        </div>
       </div>
+
+      {vorschlaege.length > 0 && (
+        <div className="card">
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">Vorschlag: Überkategorien</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Aus den vorhandenen Kategorienamen abgeleitet. Nichts wird überschrieben – bereits
+            zugeordnete Kategorien bleiben, wo sie sind. Nach dem Übernehmen lässt sich jede
+            Zuordnung in der Tabelle unten einzeln ändern.
+          </p>
+          <GroupSuggestion vorschlaege={vorschlaege} />
+        </div>
+      )}
 
       <div className="card space-y-6">
         <div className="flex items-center justify-between">
@@ -157,8 +303,8 @@ export default async function CategoriesPage({
           <p className="text-sm text-slate-400">Noch keine Kategorien.</p>
         ) : (
           <>
-            <CategoryTable title="Einnahmen" rows={income} tone="in" sort={sp.sort ?? ""} dir={dir} />
-            <CategoryTable title="Ausgaben" rows={expense} tone="out" sort={sp.sort ?? ""} dir={dir} />
+            <CategoryTable title="Einnahmen" rows={income} groups={groups} tone="in" sort={sp.sort ?? ""} dir={dir} />
+            <CategoryTable title="Ausgaben" rows={expense} groups={groups} tone="out" sort={sp.sort ?? ""} dir={dir} />
           </>
         )}
       </div>

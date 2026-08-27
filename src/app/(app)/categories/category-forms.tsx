@@ -5,13 +5,17 @@ import {
   applyHistoryCategorization,
   applyRulesToUncategorized,
   createCategory,
+  createCategoryGroup,
+  applyCategoryGroupSuggestion,
+  setCategoryParent,
   createRule,
   resetAllTransactionCategories,
 } from "@/app/actions/categories";
 import { RuleBuilder, type AccountOpt } from "./rule-builder";
-import { useActionToast } from "@/components/action-toaster";
+import { notify, useActionToast } from "@/components/action-toaster";
+import { CategoryOptions, CategoryGroupOptions } from "@/components/category-select";
 
-export function CategoryForm() {
+export function CategoryForm({ groups = [] }: { groups?: CatOption[] }) {
   const ref = useRef<HTMLFormElement>(null);
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => createCategory(fd),
@@ -39,6 +43,15 @@ export function CategoryForm() {
         <label className="label">Farbe</label>
         <input name="color" type="color" defaultValue="#007FFF" className="h-10 w-16 rounded border border-slate-300" />
       </div>
+      {groups.length > 0 && (
+        <div className="min-w-[160px]">
+          <label className="label">Überkategorie</label>
+          <select name="parentId" className="input" defaultValue="">
+            <option value="">– keine –</option>
+            <CategoryGroupOptions groups={groups} />
+          </select>
+        </div>
+      )}
       <label className="flex items-center gap-2 pb-2 text-sm text-slate-600" title="Konto-zu-Konto-Transfer – zählt nicht als Einnahme/Ausgabe">
         <input type="checkbox" name="isTransfer" className="h-4 w-4 rounded border-slate-300" />
         Geldtransfer (neutral)
@@ -51,13 +64,155 @@ export function CategoryForm() {
   );
 }
 
+/** Legt eine Überkategorie an (reine Gliederung, nicht bebuchbar). */
+export function CategoryGroupForm() {
+  const ref = useRef<HTMLFormElement>(null);
+  const [state, action, pending] = useActionState(
+    async (_p: { error?: string; ok?: boolean }, fd: FormData) => createCategoryGroup(fd),
+    {},
+  );
+  useEffect(() => {
+    if (state?.ok) ref.current?.reset();
+  }, [state]);
+  useActionToast(state, "Überkategorie angelegt");
+
+  return (
+    <form ref={ref} action={action} data-no-toast className="flex flex-wrap items-end gap-3">
+      <div className="min-w-[160px] flex-1">
+        <label className="label">Name</label>
+        <input name="name" className="input" placeholder="z.B. Fahrzeugkosten" required />
+      </div>
+      <div>
+        <label className="label">Art</label>
+        <select name="kind" className="input" defaultValue="EXPENSE">
+          <option value="INCOME">Einnahme</option>
+          <option value="EXPENSE">Ausgabe</option>
+        </select>
+      </div>
+      <div>
+        <label className="label">Farbe</label>
+        <input name="color" type="color" defaultValue="#475569" className="h-10 w-16 rounded border border-slate-300" />
+      </div>
+      {state?.error && <p className="w-full text-sm text-red-600">{state.error}</p>}
+      <button type="submit" className="btn-primary" disabled={pending}>
+        {pending ? "…" : "Anlegen"}
+      </button>
+    </form>
+  );
+}
+
+/**
+ * Zuordnung einer Kategorie zu einer Überkategorie. Sendet direkt bei
+ * Auswahländerung – ohne zusätzlichen Speichern-Klick.
+ */
+export function ParentSelect({
+  id,
+  parentId,
+  groups,
+}: {
+  id: string;
+  parentId: string | null;
+  groups: { id: string; name: string; kind: "INCOME" | "EXPENSE" }[];
+}) {
+  const [pending, startTransition] = useTransition();
+
+  if (groups.length === 0) {
+    return <span className="text-xs text-slate-300">–</span>;
+  }
+
+  return (
+    <select
+      className="input py-1 text-xs"
+      defaultValue={parentId ?? ""}
+      disabled={pending}
+      onChange={(e) => {
+        const fd = new FormData();
+        fd.set("id", id);
+        fd.set("parentId", e.target.value);
+        startTransition(async () => {
+          const res = await setCategoryParent(fd);
+          if (res?.error) notify(res.error, "error");
+          else notify("Überkategorie geändert");
+        });
+      }}
+    >
+      <option value="">– keine –</option>
+      {groups.map((g) => (
+        <option key={g.id} value={g.id}>
+          {g.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Zeigt den abgeleiteten Überkategorie-Vorschlag und wendet ihn erst auf
+ * Bestätigung an. Bestehende Zuordnungen bleiben unberührt.
+ */
+export function GroupSuggestion({
+  vorschlaege,
+}: {
+  vorschlaege: { gruppe: string; farbe: string; kind: "INCOME" | "EXPENSE"; categoryIds: string[]; namen: string[] }[];
+}) {
+  const [state, action, pending] = useActionState(
+    async (_p: { error?: string; ok?: boolean; message?: string }, fd: FormData) =>
+      applyCategoryGroupSuggestion(fd),
+    {},
+  );
+  useEffect(() => {
+    if (state?.ok) notify(state.message ?? "Vorschlag übernommen");
+  }, [state]);
+
+  if (vorschlaege.length === 0) return null;
+  const gesamt = vorschlaege.reduce((s, v) => s + v.categoryIds.length, 0);
+
+  return (
+    <form action={action} data-no-toast className="space-y-3">
+      <input
+        type="hidden"
+        name="vorschlag"
+        value={JSON.stringify(
+          vorschlaege.map((v) => ({
+            gruppe: v.gruppe,
+            farbe: v.farbe,
+            kind: v.kind,
+            categoryIds: v.categoryIds,
+          })),
+        )}
+      />
+      <div className="grid gap-2 md:grid-cols-2">
+        {vorschlaege.map((v) => (
+          <div key={v.gruppe} className="rounded-md border border-slate-200 p-2">
+            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+              <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: v.farbe }} />
+              {v.gruppe}
+              <span className="text-xs font-normal text-slate-400">
+                {v.kind === "INCOME" ? "Einnahmen" : "Ausgaben"} · {v.categoryIds.length}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{v.namen.join(" · ")}</p>
+          </div>
+        ))}
+      </div>
+      {state?.error && <p className="text-sm text-red-600">{state.error}</p>}
+      <button type="submit" className="btn-primary" disabled={pending}>
+        {pending ? "…" : `Vorschlag übernehmen (${vorschlaege.length} Überkategorien, ${gesamt} Kategorien)`}
+      </button>
+    </form>
+  );
+}
+
 export interface CatOption {
   id: string;
   name: string;
   kind: "INCOME" | "EXPENSE";
+  parentId?: string | null;
+  isGroup?: boolean;
 }
 
-// Kategorie-Auswahl nach Einnahme/Ausgabe gruppiert (optgroup).
+// Kategorie-Auswahl – Gliederung (Einnahme/Ausgabe + Überkategorie) kommt aus
+// der gemeinsamen Komponente, damit es nur eine Quelle der Wahrheit gibt.
 export function CategorySelect({
   name,
   categories,
@@ -69,8 +224,6 @@ export function CategorySelect({
   defaultValue?: string;
   required?: boolean;
 }) {
-  const income = categories.filter((c) => c.kind === "INCOME");
-  const expense = categories.filter((c) => c.kind === "EXPENSE");
   return (
     <select name={name} className="input py-1 text-sm" required={required} defaultValue={defaultValue ?? ""}>
       {!defaultValue && (
@@ -78,20 +231,7 @@ export function CategorySelect({
           wählen…
         </option>
       )}
-      {income.length > 0 && (
-        <optgroup label="Einnahmen">
-          {income.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </optgroup>
-      )}
-      {expense.length > 0 && (
-        <optgroup label="Ausgaben">
-          {expense.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </optgroup>
-      )}
+      <CategoryOptions categories={categories} />
     </select>
   );
 }

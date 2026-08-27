@@ -156,3 +156,14 @@ h1, h2, h3, h4, h5, h6 {
     padding-bottom: 3px;
   }
 }
+
+/* Klapp-Dreieck der Überkategorien: zeigt nach rechts (zu) bzw. nach unten
+   (offen). Die Drehung hängt am data-open des klickbaren Kopfelements –
+   bewusst als echte CSS-Regel statt verschachtelter Utility-Variante, weil
+   die Kopfzeile serverseitig gerendert wird. */
+.chev {
+  transition: transform 0.15s ease;
+}
+[data-open="true"] .chev {
+  transform: rotate(90deg);
+}

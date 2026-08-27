@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import type { CatNode } from "./category-tree";
 import { budgetAnnualCents, type BudgetPeriod } from "./budget";
 import { occurrencesBetween } from "./recurrence";
 
@@ -29,6 +30,8 @@ export interface PlanReview {
   months: { key: string; label: string; start: string; end: string }[];
   rows: PlanReviewRow[];
   hasData: boolean;
+  /** Kategorien inkl. Überkategorie-Zuordnung – für die gruppierte Anzeige. */
+  categories: CatNode[];
 }
 
 export async function getPlanReview(): Promise<PlanReview> {
@@ -59,7 +62,7 @@ export async function getPlanReview(): Promise<PlanReview> {
   const [cats, txs, budgets, planned] = await Promise.all([
     prisma.category.findMany({
       where: { deletedAt: null, isTransfer: false },
-      select: { id: true, name: true, kind: true },
+      select: { id: true, name: true, kind: true, color: true, parentId: true, isGroup: true },
     }),
     prisma.transaction.findMany({
       where: {
@@ -155,5 +158,8 @@ export async function getPlanReview(): Promise<PlanReview> {
     months: months.map((mm) => ({ key: mm.key, label: mm.label, start: mm.start.toISOString(), end: mm.end.toISOString() })),
     rows,
     hasData: txs.length > 0,
+    categories: cats.map((c) => ({
+      id: c.id, name: c.name, kind: c.kind, color: c.color, parentId: c.parentId, isGroup: c.isGroup,
+    })),
   };
 }

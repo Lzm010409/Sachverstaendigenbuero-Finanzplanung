@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { GROUP_PREFIX } from "@/lib/category-tree";
 import { INCLUDED_ACCOUNT, getAccountsWithBalance, getTotalBalanceCents } from "@/lib/queries";
 import { getKpis } from "@/lib/analytics";
 import { occurrencesBetween } from "@/lib/recurrence";
@@ -338,7 +339,15 @@ async function RangeDrill({ from, to, dir, cat }: { from: string; to: string; di
   if (dir === "in") filtered = filtered.filter((r) => r.amount > 0);
   else if (dir === "out") filtered = filtered.filter((r) => r.amount < 0);
   if (cat === "none") filtered = filtered.filter((r) => r.categoryId == null);
-  else if (cat && cat !== "all") filtered = filtered.filter((r) => r.categoryId === cat);
+  else if (cat?.startsWith(GROUP_PREFIX)) {
+    // Ganze Überkategorie: alle Bewegungen ihrer Kindkategorien.
+    const kinder = await prisma.category.findMany({
+      where: { parentId: cat.slice(GROUP_PREFIX.length) },
+      select: { id: true },
+    });
+    const ids = new Set(kinder.map((k) => k.id));
+    filtered = filtered.filter((r) => r.categoryId != null && ids.has(r.categoryId));
+  } else if (cat && cat !== "all") filtered = filtered.filter((r) => r.categoryId === cat);
   filtered.sort((a, b) => a.date.localeCompare(b.date));
   const total = filtered.reduce((s, r) => s + r.amount, 0);
   const dirWord = dir === "in" ? "Einzahlungen" : dir === "out" ? "Auszahlungen" : "Bewegungen";

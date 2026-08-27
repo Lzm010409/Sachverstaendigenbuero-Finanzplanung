@@ -124,10 +124,23 @@ export function KpiForm({
             <option value="month">nach Monat</option>
             <option value="week">nach Woche</option>
             <option value="category">nach Kategorie</option>
+            <option value="categoryGroup">nach Überkategorie</option>
           </select>
         </div>
       )}
-      {isPie && <input type="hidden" name="groupBy" value="category" />}
+      {isPie && (
+        <div>
+          <label className="label">Gruppierung</label>
+          <select
+            name="groupBy"
+            defaultValue={initial?.groupBy === "categoryGroup" ? "categoryGroup" : "category"}
+            className="input"
+          >
+            <option value="category">nach Kategorie</option>
+            <option value="categoryGroup">nach Überkategorie</option>
+          </select>
+        </div>
+      )}
       {isNumber && <input type="hidden" name="groupBy" value="none" />}
       <div>
         <label className="label">Größe</label>

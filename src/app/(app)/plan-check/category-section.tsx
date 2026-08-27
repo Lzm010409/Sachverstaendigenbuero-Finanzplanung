@@ -1,11 +1,17 @@
 import Link from "next/link";
-import { getPlanReview } from "@/lib/plan-review";
+import { getPlanReview, type PlanReviewRow } from "@/lib/plan-review";
+import { GroupTableSection, Chevron } from "@/components/category-group";
+import { groupRowsByCategoryGroup, sumBy } from "@/lib/category-tree";
+import { formatCents } from "@/lib/money";
+
+/** localStorage-Schlüssel für den Aufklapp-Zustand des Plan-Checks. */
+const STORE_KEY = "cat:open:plan-check";
 import { PlanCheckRow } from "./plan-check-row";
 
 // „Nach Kategorie": Ø-Ist der letzten 3 vollen Monate je Kategorie gegen den
 // aktuellen Plan (Budget + Planposten), mit 1-Klick-Übernahme.
 export async function CategorySection() {
-  const { months, rows, hasData } = await getPlanReview();
+  const { months, rows, hasData, categories } = await getPlanReview();
   const income = rows.filter((r) => r.kind === "INCOME");
   const expense = rows.filter((r) => r.kind === "EXPENSE");
   const actionable = rows.filter((r) => r.status === "new" || r.status === "adjust").length;
@@ -23,6 +29,45 @@ export async function CategorySection() {
       </tr>
     </thead>
   );
+
+  // Zeilen nach Überkategorie bündeln; die Kopfzeile trägt Ø-Ist und Plan.
+  const renderGrouped = (list: PlanReviewRow[]) =>
+    groupRowsByCategoryGroup(list, (r) => r.categoryId, categories).map((g) => {
+      const body = g.rows.map((r) => <PlanCheckRow key={r.categoryId} row={r} />);
+      if (!g.group) return <tbody key="ohne">{body}</tbody>;
+      const gAvg = sumBy(g.rows, (r) => r.avg);
+      const gPlan = sumBy(g.rows, (r) => r.plan);
+      return (
+        <GroupTableSection
+          key={g.group.id}
+          storeKey={STORE_KEY}
+          groupId={g.group.id}
+          header={
+            <tr className="border-b border-slate-100 bg-slate-50/80 font-semibold text-slate-800">
+              <td className="td">
+                <Chevron className="mr-2 align-middle" />
+                <span
+                  className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                  style={{ backgroundColor: g.group.color }}
+                />
+                {g.group.name}
+                <span className="ml-2 text-xs font-normal text-slate-400">({g.rows.length})</span>
+              </td>
+              {months.map((m, i) => (
+                <td key={m.key} className="td text-right tabular-nums">
+                  {formatCents(sumBy(g.rows, (r) => r.months[i] ?? 0))}
+                </td>
+              ))}
+              <td className="td text-right tabular-nums">{formatCents(gAvg)}</td>
+              <td className="td text-right tabular-nums">{formatCents(gPlan)}</td>
+              <td className="td"></td>
+            </tr>
+          }
+        >
+          {body}
+        </GroupTableSection>
+      );
+    });
 
   if (!hasData) {
     return (
@@ -55,21 +100,19 @@ export async function CategorySection() {
                 <tr className="bg-slate-50">
                   <td className="td font-semibold text-slate-700" colSpan={months.length + 4}>Ausgaben</td>
                 </tr>
-                {expense.map((r) => (
-                  <PlanCheckRow key={r.categoryId} row={r} />
-                ))}
               </tbody>
+              {renderGrouped(expense)}
             </>
           )}
           {income.length > 0 && (
-            <tbody>
-              <tr className="bg-slate-50">
-                <td className="td font-semibold text-slate-700" colSpan={months.length + 4}>Einnahmen</td>
-              </tr>
-              {income.map((r) => (
-                <PlanCheckRow key={r.categoryId} row={r} />
-              ))}
-            </tbody>
+            <>
+              <tbody>
+                <tr className="bg-slate-50">
+                  <td className="td font-semibold text-slate-700" colSpan={months.length + 4}>Einnahmen</td>
+                </tr>
+              </tbody>
+              {renderGrouped(income)}
+            </>
           )}
         </table>
       </div>

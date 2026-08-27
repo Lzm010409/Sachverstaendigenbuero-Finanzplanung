@@ -2,6 +2,42 @@ import Link from "next/link";
 import { getPlanVsActual } from "@/lib/queries";
 import { formatCents } from "@/lib/money";
 import { CellHover } from "@/components/cell-hover";
+import { GroupTableSection, Chevron } from "@/components/category-group";
+import { groupRowsByCategoryGroup, sumBy } from "@/lib/category-tree";
+import type { PlanActualRow } from "@/lib/queries";
+
+/** localStorage-Schlüssel für den Aufklapp-Zustand von Soll/Ist. */
+const STORE_KEY = "cat:open:plan-actual";
+
+/** Eine Kategoriezeile des Soll/Ist-Vergleichs. */
+function PlanActualDataRow({
+  r,
+  fromISO,
+  toISO,
+  monthLabel,
+  indent,
+}: {
+  r: PlanActualRow;
+  fromISO: string;
+  toISO: string;
+  monthLabel: string;
+  indent?: boolean;
+}) {
+  const diff = r.actual - r.planned;
+  const q = { cat: r.categoryId ?? "none", from: fromISO, to: toISO };
+  const title = `${r.categoryName} · ${monthLabel}`;
+  return (
+    <tr className="border-b border-slate-50">
+      <td className={`td font-medium ${indent ? "pl-6" : ""}`}>{r.categoryName}</td>
+      <CellHover query={q} title={title} className="td text-right">{formatCents(r.planned)}</CellHover>
+      <CellHover query={q} title={title} className="td text-right">{formatCents(r.actual)}</CellHover>
+      <td className={`td text-right font-semibold ${diff < 0 ? "text-red-600" : "text-emerald-600"}`}>
+        {diff > 0 ? "+" : ""}
+        {formatCents(diff)}
+      </td>
+    </tr>
+  );
+}
 import { SortableTh } from "@/components/sortable-th";
 
 export const dynamic = "force-dynamic";
@@ -13,7 +49,7 @@ export default async function PlanActualPage({
 }) {
   const sp = await searchParams;
   const monthOffset = Math.min(0, Math.max(-24, Number(sp.m) || 0));
-  const { monthStart, rows: rawRows } = await getPlanVsActual(monthOffset);
+  const { monthStart, rows: rawRows, categories } = await getPlanVsActual(monthOffset);
 
   // Sortierung (im Speicher, da die Zeilen aus einer Aggregation stammen).
   const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
@@ -31,6 +67,9 @@ export default async function PlanActualPage({
         return va < vb ? -1 * mul : va > vb ? 1 * mul : 0;
       })
     : rawRows;
+
+  // Zeilen nach Überkategorie bündeln (Summen stehen in der Kopfzeile).
+  const grouped = groupRowsByCategoryGroup(rows, (r) => r.categoryId, categories);
 
   const monthLabel = monthStart.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
   const fromISO = monthStart.toISOString().slice(0, 10);
@@ -76,26 +115,50 @@ export default async function PlanActualPage({
                   <SortableTh col="diff" label="Abweichung" sort={sp.sort ?? ""} dir={dir} basePath="/plan-actual" params={sortParams} align="right" />
                 </tr>
               </thead>
-              <tbody>
-                {rows.map((r) => {
-                  const diff = r.actual - r.planned;
-                  const q = { cat: r.categoryId ?? "none", from: fromISO, to: toISO };
-                  const title = `${r.categoryName} · ${monthLabel}`;
-                  return (
-                    <tr key={r.categoryId ?? "none"} className="border-b border-slate-50">
-                      <td className="td font-medium">{r.categoryName}</td>
-                      <CellHover query={q} title={title} className="td text-right">{formatCents(r.planned)}</CellHover>
-                      <CellHover query={q} title={title} className="td text-right">{formatCents(r.actual)}</CellHover>
-                      <td
-                        className={`td text-right font-semibold ${diff < 0 ? "text-red-600" : "text-emerald-600"}`}
-                      >
-                        {diff > 0 ? "+" : ""}
-                        {formatCents(diff)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
+              {grouped.map((g) => {
+                const body = g.rows.map((r) => (
+                  <PlanActualDataRow
+                    key={r.categoryId ?? "none"}
+                    r={r}
+                    fromISO={fromISO}
+                    toISO={toISO}
+                    monthLabel={monthLabel}
+                    indent={!!g.group}
+                  />
+                ));
+                if (!g.group) return <tbody key="ohne">{body}</tbody>;
+                const gPlanned = sumBy(g.rows, (r) => r.planned);
+                const gActual = sumBy(g.rows, (r) => r.actual);
+                const gDiff = gActual - gPlanned;
+                return (
+                  <GroupTableSection
+                    key={g.group.id}
+                    storeKey={STORE_KEY}
+                    groupId={g.group.id}
+                    header={
+                      <tr className="border-b border-slate-100 bg-slate-50/80 font-semibold text-slate-800">
+                        <td className="td">
+                          <Chevron className="mr-2 align-middle" />
+                          <span
+                            className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                            style={{ backgroundColor: g.group.color }}
+                          />
+                          {g.group.name}
+                          <span className="ml-2 text-xs font-normal text-slate-400">({g.rows.length})</span>
+                        </td>
+                        <td className="td text-right tabular-nums">{formatCents(gPlanned)}</td>
+                        <td className="td text-right tabular-nums">{formatCents(gActual)}</td>
+                        <td className={`td text-right ${gDiff < 0 ? "text-red-600" : "text-emerald-600"}`}>
+                          {gDiff > 0 ? "+" : ""}
+                          {formatCents(gDiff)}
+                        </td>
+                      </tr>
+                    }
+                  >
+                    {body}
+                  </GroupTableSection>
+                );
+              })}
               <tfoot>
                 <tr className="border-t border-slate-200 font-semibold">
                   <td className="td">Summe</td>

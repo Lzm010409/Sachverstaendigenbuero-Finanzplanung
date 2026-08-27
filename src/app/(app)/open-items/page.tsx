@@ -141,7 +141,7 @@ export default async function OpenItemsPage({
 
       <div className="card">
         <h2 className="mb-4 text-sm font-semibold text-slate-700">Neuer Posten</h2>
-        <OpenItemForm categories={categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }))} />
+        <OpenItemForm categories={categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup }))} />
       </div>
 
       <div className="card">

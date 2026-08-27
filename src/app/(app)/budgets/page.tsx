@@ -4,6 +4,8 @@ import { periodShort, budgetAnnualCents, type BudgetPeriod } from "@/lib/budget"
 import { deleteBudget, purgeBudget, restoreBudget, toggleBudgetActive } from "@/app/actions/budgets";
 import { budgetToPlanned } from "@/app/actions/convert";
 import { ConfirmSubmit } from "@/components/confirm-submit";
+import { GroupSection, Chevron } from "@/components/category-group";
+import { groupRowsByCategoryGroup, sumBy, type CatNode } from "@/lib/category-tree";
 import { TransferMenu } from "@/components/transfer-menu";
 import type { CatOption } from "../categories/category-forms";
 import { BudgetForm, BudgetRow, DeleteBudgetButton, type BudgetView } from "./budget-forms";
@@ -46,18 +48,12 @@ function toView(b: Row): BudgetView {
   };
 }
 
-function BudgetTable({ title, rows, categories, tone }: { title: string; rows: Row[]; categories: CatOption[]; tone: "in" | "out" }) {
+const STORE_KEY = "cat:open:budgets";
+
+/** Ein einzelnes Budget als Karte. */
+function BudgetCard({ b, categories }: { b: Row; categories: CatOption[] }) {
   return (
-    <div>
-      <h3 className={`mb-2 text-xs font-semibold uppercase tracking-wide ${tone === "in" ? "text-emerald-700" : "text-red-700"}`}>
-        {title} <span className="text-slate-400">({rows.length})</span>
-      </h3>
-      {rows.length === 0 ? (
-        <p className="text-sm text-slate-400">Keine {tone === "in" ? "Einnahme" : "Ausgabe"}-Budgets.</p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map((b) => (
-            <div key={b.id} className={`rounded-md border border-slate-200 p-3 ${b.active ? "" : "opacity-60"}`}>
+    <div className={`rounded-md border border-slate-200 p-3 ${b.active ? "" : "opacity-60"}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-800">
@@ -91,8 +87,71 @@ function BudgetTable({ title, rows, categories, tone }: { title: string; rows: R
               <div className="mt-2 border-t border-slate-100 pt-2">
                 <BudgetRow budget={toView(b)} categories={categories} />
               </div>
-            </div>
-          ))}
+    </div>
+  );
+}
+
+function BudgetTable({
+  title,
+  rows,
+  categories,
+  catNodes,
+  tone,
+}: {
+  title: string;
+  rows: Row[];
+  categories: CatOption[];
+  catNodes: CatNode[];
+  tone: "in" | "out";
+}) {
+  // Budgets nach der Überkategorie ihrer Kategorie bündeln. Budgets ohne
+  // Kategorie (oder ohne Überkategorie) bleiben ungruppiert am Ende.
+  const grouped = groupRowsByCategoryGroup(rows, (b) => b.categoryId, catNodes);
+  return (
+    <div>
+      <h3 className={`mb-2 text-xs font-semibold uppercase tracking-wide ${tone === "in" ? "text-emerald-700" : "text-red-700"}`}>
+        {title} <span className="text-slate-400">({rows.length})</span>
+      </h3>
+      {rows.length === 0 ? (
+        <p className="text-sm text-slate-400">Keine {tone === "in" ? "Einnahme" : "Ausgabe"}-Budgets.</p>
+      ) : (
+        <div className="space-y-2">
+          {grouped.map((g) =>
+            g.group ? (
+              <GroupSection
+                key={g.group.id}
+                storeKey={STORE_KEY}
+                groupId={g.group.id}
+                className="rounded-md border border-slate-200"
+                header={
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-md bg-slate-50/70 px-3 py-2">
+                    <span className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                      <Chevron />
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={{ backgroundColor: g.group.color }}
+                      />
+                      {g.group.name}
+                      <span className="text-xs font-normal text-slate-400">
+                        ({g.rows.length} {g.rows.length === 1 ? "Budget" : "Budgets"})
+                      </span>
+                    </span>
+                    <span className="text-xs font-semibold text-slate-700">
+                      {formatCents(sumBy(g.rows, (b) => budgetAnnualCents(b.amount, b.period)))} p.a.
+                    </span>
+                  </div>
+                }
+              >
+                <div className="space-y-2 p-2">
+                  {g.rows.map((b) => (
+                    <BudgetCard key={b.id} b={b} categories={categories} />
+                  ))}
+                </div>
+              </GroupSection>
+            ) : (
+              g.rows.map((b) => <BudgetCard key={b.id} b={b} categories={categories} />)
+            ),
+          )}
         </div>
       )}
     </div>
@@ -114,7 +173,10 @@ export default async function BudgetsPage() {
     prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
   ]);
 
-  const categories: CatOption[] = cats.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  const categories: CatOption[] = cats.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup }));
+  const catNodes: CatNode[] = cats.map((c) => ({
+    id: c.id, name: c.name, kind: c.kind, color: c.color, parentId: c.parentId, isGroup: c.isGroup,
+  }));
   const income = (active as Row[]).filter((b) => b.kind === "INCOME");
   const expense = (active as Row[]).filter((b) => b.kind === "EXPENSE");
   const now = Date.now();
@@ -140,8 +202,8 @@ export default async function BudgetsPage() {
           <p className="text-sm text-slate-400">Noch keine Budgets angelegt.</p>
         ) : (
           <>
-            <BudgetTable title="Einnahmen-Budgets" rows={income} categories={categories} tone="in" />
-            <BudgetTable title="Ausgaben-Budgets" rows={expense} categories={categories} tone="out" />
+            <BudgetTable title="Einnahmen-Budgets" rows={income} categories={categories} catNodes={catNodes} tone="in" />
+            <BudgetTable title="Ausgaben-Budgets" rows={expense} categories={categories} catNodes={catNodes} tone="out" />
           </>
         )}
       </div>

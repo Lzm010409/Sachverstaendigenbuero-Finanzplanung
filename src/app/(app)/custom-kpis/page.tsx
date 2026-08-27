@@ -10,10 +10,10 @@ const iso = (d: Date | null) => (d ? new Date(d).toISOString().slice(0, 10) : nu
 export default async function CustomKpisPage() {
   const [defs, categories] = await Promise.all([
     getCustomKpiDefs(),
-    prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }], select: { id: true, name: true, kind: true } }),
+    prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }], select: { id: true, name: true, kind: true, parentId: true, isGroup: true } }),
   ]);
   const results = await computeCustomKpis(defs);
-  const catOpts = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind }));
+  const catOpts = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup }));
 
   const toInitial = (id: string): KpiInitial => {
     const d = defs.find((x) => x.id === id)!;

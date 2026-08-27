@@ -8,6 +8,7 @@ import { getBranding } from "@/lib/settings";
 import { getCustomKpiDefs, computeCustomKpis } from "@/lib/custom-kpi";
 import { todayUTC } from "@/lib/dates";
 import { formatCents } from "@/lib/money";
+import { groupRowsByCategoryGroup, sumBy } from "@/lib/category-tree";
 import { ReportBuilder, type ReportData } from "./report-builder";
 
 export const dynamic = "force-dynamic";
@@ -33,16 +34,36 @@ export default async function ReportPage() {
   const showProj = elapsed > 0.02 && elapsed < 0.995;
   const buildBudget = (rows: BreakdownRow[], isIncome: boolean) => {
     const budgeted = rows.filter((r) => r.annualBudget > 0);
-    const brows = budgeted.map((r) => {
-      const projPct = showProj ? Math.round((r.yearActual / elapsed / r.annualBudget) * 100) : null;
+    // Im Report werden Überkategorien IMMER ausgeschrieben: eine Summenzeile
+    // der Überkategorie, darunter eingerückt ihre Kategorien. Ein eingeklappter
+    // Bildschirmzustand darf sich nie auf den Druck auswirken.
+    const fmtRow = (
+      name: string,
+      yearActual: number,
+      annualBudget: number,
+      opts?: { isGroup?: boolean },
+    ) => {
+      const projPct = showProj && annualBudget > 0
+        ? Math.round((yearActual / elapsed / annualBudget) * 100)
+        : null;
+      const pctN = annualBudget > 0 ? Math.round((yearActual / annualBudget) * 100) : null;
       return {
-        name: r.name,
-        actual: formatCents(isIncome ? r.yearActual : -r.yearActual),
-        budget: formatCents(isIncome ? r.annualBudget : -r.annualBudget),
-        pct: r.budgetPct != null ? `${Math.round(r.budgetPct * 100)} %` : "–",
+        name,
+        actual: formatCents(isIncome ? yearActual : -yearActual),
+        budget: formatCents(isIncome ? annualBudget : -annualBudget),
+        pct: pctN != null ? `${pctN} %` : "–",
         proj: projPct != null ? `${projPct} %` : null,
         breach: !isIncome && projPct != null && projPct > 100,
+        isGroup: opts?.isGroup ?? false,
       };
+    };
+    const grouped = groupRowsByCategoryGroup(budgeted, (r) => r.categoryId, bd.categories);
+    const brows = grouped.flatMap((g) => {
+      const kinder = g.rows.map((r) => fmtRow(r.name, r.yearActual, r.annualBudget));
+      if (!g.group) return kinder;
+      const gActual = sumBy(g.rows, (r) => r.yearActual);
+      const gBudget = sumBy(g.rows, (r) => r.annualBudget);
+      return [fmtRow(g.group.name, gActual, gBudget, { isGroup: true }), ...kinder];
     });
     const sumBudget = budgeted.reduce((s, r) => s + r.annualBudget, 0);
     const sumActual = budgeted.reduce((s, r) => s + r.yearActual, 0);

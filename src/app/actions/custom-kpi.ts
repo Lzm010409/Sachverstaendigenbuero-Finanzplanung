@@ -8,7 +8,7 @@ import type { FormState } from "./types";
 const METRICS = ["net", "income", "expense", "volume", "count", "avg"];
 const RANGES = ["mtd", "last_month", "ytd", "last_year", "last_30d", "last_90d", "rolling_12m", "custom"];
 const DISPLAYS = ["number", "bar", "line", "pie"];
-const GROUPS = ["none", "month", "week", "category"];
+const GROUPS = ["none", "month", "week", "category", "categoryGroup"];
 const SIZES = ["sm", "md", "lg", "xl"];
 
 function parse(formData: FormData) {
@@ -27,7 +27,7 @@ function parse(formData: FormData) {
 
   // Konsistenz erzwingen: Zahl => keine Gruppierung; Kreis => nach Kategorie.
   if (display === "number") groupBy = "none";
-  else if (display === "pie") groupBy = "category";
+  else if (display === "pie" && groupBy !== "categoryGroup") groupBy = "category";
   else if (groupBy === "none") groupBy = "month";
 
   return {

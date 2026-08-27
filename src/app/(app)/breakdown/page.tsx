@@ -6,6 +6,12 @@ import { GranularityToggle } from "@/components/granularity-toggle";
 import { PageAlerts } from "@/components/page-alerts";
 import { BreakdownRowInfo } from "./row-info";
 import { CellHover } from "@/components/cell-hover";
+import { Fragment } from "react";
+import { GroupTableSection, Chevron } from "@/components/category-group";
+import { groupRowsByCategoryGroup, sumBy, type CatNode } from "@/lib/category-tree";
+
+/** localStorage-Schlüssel für den Aufklapp-Zustand der Auswertung. */
+const STORE_KEY = "cat:open:breakdown";
 
 export const dynamic = "force-dynamic";
 
@@ -14,53 +20,27 @@ function pctLabel(pct: number | null): string {
   return `${Math.round(pct * 100)} %`;
 }
 
-function Section({
-  title,
-  rows,
+/** Eine Kategoriezeile der Auswertung. */
+function BreakdownDataRow({
+  r,
   periods,
   divisor,
-  elapsed,
+  showProjection,
+  projPctOf,
+  indent,
 }: {
-  title: string;
-  rows: BreakdownRow[];
+  r: BreakdownRow;
   periods: { key: string; label: string; start: Date; end: Date }[];
   divisor: number;
-  elapsed: number; // verstrichener Jahresanteil (0..1) für die Hochrechnung
+  showProjection: boolean;
+  projPctOf: (yearActual: number, annualBudget: number) => number | null;
+  indent?: boolean;
 }) {
-  if (rows.length === 0) return null;
-  const isIncomeSection = rows[0].kind === "INCOME";
-  // Hochrechnung nur sinnvoll im laufenden (noch nicht abgeschlossenen) Jahr.
-  const showProjection = elapsed > 0.02 && elapsed < 0.995;
-  const projPctOf = (yearActual: number, annualBudget: number) =>
-    annualBudget > 0 ? Math.round((yearActual / elapsed / annualBudget) * 100) : null;
-  // Kumulierte Werte der Sektion: Spaltensummen (Ist je Zeitraum) sowie
-  // Jahres-Ist/-Budget (nur Kategorien mit Budget) für den Ist/Soll-Vergleich.
-  const periodSums = periods.map((_, i) => rows.reduce((s, r) => s + (r.values[i] ?? 0), 0));
-  const budgeted = rows.filter((r) => r.annualBudget > 0);
-  const sumBudget = budgeted.reduce((s, r) => s + r.annualBudget, 0);
-  const sumActual = budgeted.reduce((s, r) => s + r.yearActual, 0);
-  const sumPct = sumBudget > 0 ? Math.round((sumActual / sumBudget) * 100) : null;
-  const sumBg = budgetCellColor(sumActual, sumBudget, isIncomeSection);
-  // Budget-Auslastung je Zeitraum: Ist der budgetierten Kategorien gegen das
-  // anteilige Perioden-Budget (Jahresbudget / Divisor: 12 Monat, 52 Woche, 1 Jahr).
-  const periodBudgetTotal = sumBudget / divisor;
-  const periodBudgetedSums = periods.map((_, i) => budgeted.reduce((s, r) => s + (r.values[i] ?? 0), 0));
-  const periodPct = periodBudgetedSums.map((v) =>
-    periodBudgetTotal > 0 ? Math.round((Math.abs(v) / periodBudgetTotal) * 100) : null,
-  );
+  const isIncome = r.kind === "INCOME";
+  const periodBudget = r.annualBudget > 0 ? r.annualBudget / divisor : 0;
   return (
-    <>
-      <tr className="bg-slate-50">
-        <td className="td font-semibold text-slate-700" colSpan={periods.length + 3}>
-          {title}
-        </td>
-      </tr>
-      {rows.map((r) => {
-        const isIncome = r.kind === "INCOME";
-        const periodBudget = r.annualBudget > 0 ? r.annualBudget / divisor : 0;
-        return (
-          <tr key={r.categoryId ?? r.name} className="border-b border-slate-50">
-            <td className="td sticky left-0 z-10 bg-white font-medium">
+    <tr className="border-b border-slate-50">
+            <td className={`td sticky left-0 z-10 bg-white font-medium ${indent ? "pl-6" : ""}`}>
               <BreakdownRowInfo
                 name={r.name}
                 color={r.color}
@@ -115,9 +95,118 @@ function Section({
               })()}
             </td>
           </tr>
+  );
+}
+
+function Section({
+  title,
+  rows,
+  categories,
+  periods,
+  divisor,
+  elapsed,
+}: {
+  title: string;
+  rows: BreakdownRow[];
+  categories: CatNode[];
+  periods: { key: string; label: string; start: Date; end: Date }[];
+  divisor: number;
+  elapsed: number; // verstrichener Jahresanteil (0..1) für die Hochrechnung
+}) {
+  if (rows.length === 0) return null;
+  const isIncomeSection = rows[0].kind === "INCOME";
+  // Hochrechnung nur sinnvoll im laufenden (noch nicht abgeschlossenen) Jahr.
+  const showProjection = elapsed > 0.02 && elapsed < 0.995;
+  const projPctOf = (yearActual: number, annualBudget: number) =>
+    annualBudget > 0 ? Math.round((yearActual / elapsed / annualBudget) * 100) : null;
+  // Kumulierte Werte der Sektion: Spaltensummen (Ist je Zeitraum) sowie
+  // Jahres-Ist/-Budget (nur Kategorien mit Budget) für den Ist/Soll-Vergleich.
+  const periodSums = periods.map((_, i) => rows.reduce((s, r) => s + (r.values[i] ?? 0), 0));
+  const budgeted = rows.filter((r) => r.annualBudget > 0);
+  const sumBudget = budgeted.reduce((s, r) => s + r.annualBudget, 0);
+  const sumActual = budgeted.reduce((s, r) => s + r.yearActual, 0);
+  const sumPct = sumBudget > 0 ? Math.round((sumActual / sumBudget) * 100) : null;
+  const sumBg = budgetCellColor(sumActual, sumBudget, isIncomeSection);
+  // Budget-Auslastung je Zeitraum: Ist der budgetierten Kategorien gegen das
+  // anteilige Perioden-Budget (Jahresbudget / Divisor: 12 Monat, 52 Woche, 1 Jahr).
+  const periodBudgetTotal = sumBudget / divisor;
+  const periodBudgetedSums = periods.map((_, i) => budgeted.reduce((s, r) => s + (r.values[i] ?? 0), 0));
+  const periodPct = periodBudgetedSums.map((v) =>
+    periodBudgetTotal > 0 ? Math.round((Math.abs(v) / periodBudgetTotal) * 100) : null,
+  );
+  // Zeilen nach Überkategorie bündeln. Die Kopfzeile einer Überkategorie trägt
+  // die aufsummierten Perioden- und Jahreswerte, damit eingeklappt nichts fehlt.
+  const grouped = groupRowsByCategoryGroup(rows, (r) => r.categoryId, categories);
+  const rowProps = { periods, divisor, showProjection, projPctOf };
+
+  const renderGroups = () =>
+    grouped.map((g) => {
+      if (!g.group) {
+        return (
+          <Fragment key="ohne">
+            {g.rows.map((r) => (
+              <BreakdownDataRow key={r.categoryId ?? r.name} r={r} {...rowProps} />
+            ))}
+          </Fragment>
         );
-      })}
+      }
+      const gVals = periods.map((_, i) => sumBy(g.rows, (r) => r.values[i] ?? 0));
+      const gBudget = sumBy(g.rows, (r) => r.annualBudget);
+      const gActual = sumBy(g.rows, (r) => r.yearActual);
+      const gPct = gBudget > 0 ? Math.round((gActual / gBudget) * 100) : null;
+      const gBg = budgetCellColor(gActual, gBudget, isIncomeSection);
+      return (
+        <GroupTableSection
+          key={g.group.id}
+          storeKey={STORE_KEY}
+          groupId={g.group.id}
+          header={
+            <tr className="border-b border-slate-100 bg-slate-50/80 font-semibold text-slate-800">
+              <td className="td sticky left-0 z-10 bg-slate-50">
+                <Chevron className="mr-2 align-middle" />
+                <span
+                  className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                  style={{ backgroundColor: g.group.color }}
+                />
+                {g.group.name}
+                <span className="ml-2 text-xs font-normal text-slate-400">({g.rows.length})</span>
+              </td>
+              {gVals.map((v, i) => (
+                <td key={periods[i].key} className="td whitespace-nowrap text-right tabular-nums">
+                  {v === 0 ? <span className="text-slate-300">–</span> : formatCents(v)}
+                </td>
+              ))}
+              <td className="td whitespace-nowrap text-right tabular-nums">
+                {gBudget > 0 ? formatCents(isIncomeSection ? gBudget : -gBudget) : "–"}
+              </td>
+              <td
+                className="td whitespace-nowrap text-right"
+                style={gBg ? { backgroundColor: gBg } : undefined}
+              >
+                {gPct != null ? `${gPct} %` : "–"}
+              </td>
+            </tr>
+          }
+        >
+          {g.rows.map((r) => (
+            <BreakdownDataRow key={r.categoryId ?? r.name} r={r} {...rowProps} indent />
+          ))}
+        </GroupTableSection>
+      );
+    });
+
+  return (
+    <>
+      <tbody>
+        <tr className="bg-slate-50">
+          <td className="td font-semibold text-slate-700" colSpan={periods.length + 3}>
+            {title}
+          </td>
+        </tr>
+      </tbody>
+      {renderGroups()}
       {/* Kumulierte Summenzeile der Sektion (Ist je Zeitraum + Ist/Soll Jahr). */}
+      <tbody>
       <tr className="border-y-2 border-slate-200 bg-slate-100 font-semibold text-slate-800">
         <td className="td sticky left-0 z-10 bg-slate-100">Summe {title}</td>
         {periodSums.map((v, i) => (
@@ -156,6 +245,7 @@ function Section({
           })()}
         </td>
       </tr>
+      </tbody>
     </>
   );
 }
@@ -239,10 +329,8 @@ export default async function BreakdownPage({
                 <th className="th text-right">% Jahr</th>
               </tr>
             </thead>
-            <tbody>
-              <Section title="Einnahmen" rows={data.incomeRows} periods={data.periods} divisor={data.periodBudgetDivisor} elapsed={data.yearElapsedFraction} />
-              <Section title="Ausgaben" rows={data.expenseRows} periods={data.periods} divisor={data.periodBudgetDivisor} elapsed={data.yearElapsedFraction} />
-            </tbody>
+            <Section title="Einnahmen" rows={data.incomeRows} categories={data.categories} periods={data.periods} divisor={data.periodBudgetDivisor} elapsed={data.yearElapsedFraction} />
+            <Section title="Ausgaben" rows={data.expenseRows} categories={data.categories} periods={data.periods} divisor={data.periodBudgetDivisor} elapsed={data.yearElapsedFraction} />
           </table>
         )}
       </div>

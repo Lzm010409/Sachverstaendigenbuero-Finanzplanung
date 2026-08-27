@@ -1,4 +1,5 @@
 import { prisma } from "./db";
+import type { CatNode } from "./category-tree";
 import { addDays, addMonths, isoDate, startOfDayUTC, todayUTC } from "./dates";
 import { getScenarioConfig, getTotalBalanceCents, getTransferCategoryIds, INCLUDED_ACCOUNT } from "./queries";
 import { getBudgetAnnualByCategory, getForecastBudgetItems } from "./budgets";
@@ -76,6 +77,8 @@ export interface BreakdownResult {
   yearElapsedFraction: number; // Anteil des Bezugsjahres, der bereits vergangen ist (0..1)
   incomeRows: BreakdownRow[];
   expenseRows: BreakdownRow[];
+  /** Kategorien inkl. Überkategorie-Zuordnung – für die gruppierte Anzeige. */
+  categories: CatNode[];
 }
 
 /**
@@ -177,6 +180,9 @@ export async function getCategoryBreakdown(
     periods,
     periodBudgetDivisor: divisor,
     yearElapsedFraction,
+    categories: categories.map((c) => ({
+      id: c.id, name: c.name, kind: c.kind, color: c.color, parentId: c.parentId, isGroup: c.isGroup,
+    })),
     incomeRows: rows.filter((r) => r.kind === "INCOME").sort((a, b) => a.name.localeCompare(b.name)),
     expenseRows: rows
       .filter((r) => r.kind !== "INCOME")
@@ -267,6 +273,8 @@ export interface CashflowMatrix {
   months: CashflowMonth[];
   incomeRows: CashflowCatRow[];
   expenseRows: CashflowCatRow[];
+  /** Kategorien inkl. Überkategorie-Zuordnung – für die gruppierte Anzeige. */
+  categories: CatNode[];
 }
 
 const MONTHS_LONG = [
@@ -497,6 +505,9 @@ export async function getCashflowMatrix(
     })),
     incomeRows: buildRows("INCOME"),
     expenseRows: buildRows("EXPENSE"),
+    categories: categories.map((c) => ({
+      id: c.id, name: c.name, kind: c.kind, color: c.color, parentId: c.parentId, isGroup: c.isGroup,
+    })),
   };
 }
 
@@ -568,6 +579,8 @@ export interface BudgetStatusRow {
   categoryId: string;
   name: string;
   color: string;
+  /** Überkategorie der Kategorie (null = keine) – für die gruppierte Anzeige. */
+  parentId?: string | null;
   kind: "INCOME" | "EXPENSE";
   monthlyBudget: number; // Cent
   actual: number; // bislang in diesem Monat (Magnitude, Cent)
@@ -586,6 +599,8 @@ export interface BudgetStatus {
   totalExpenseActual: number;
   overCount: number; // Ausgaben-Budgets, deren Hochrechnung das Limit reißt
   atRiskCount: number; // Ausgaben-Budgets nahe am Limit
+  /** Überkategorien (nur die belegten) – für die gruppierte Anzeige. */
+  groups: CatNode[];
 }
 
 /**
@@ -612,7 +627,7 @@ export async function getBudgetStatus(monthOffset = 0): Promise<BudgetStatus> {
       where: { deletedAt: null, active: true, categoryId: { not: null }, category: { deletedAt: null } },
       select: {
         amount: true, period: true, startDate: true, endDate: true,
-        category: { select: { id: true, name: true, color: true, kind: true } },
+        category: { select: { id: true, name: true, color: true, kind: true, parentId: true } },
       },
     }),
     prisma.transaction.findMany({
@@ -627,14 +642,14 @@ export async function getBudgetStatus(monthOffset = 0): Promise<BudgetStatus> {
 
   // Mehrere Budgets je Kategorie zu einem Monatsbudget zusammenfassen (nur am
   // Stichtag gültige). Kategorie-Metadaten aus dem ersten Budget je Kategorie.
-  const perCat = new Map<string, { monthlyBudget: number; name: string; color: string; kind: "INCOME" | "EXPENSE" }>();
+  const perCat = new Map<string, { monthlyBudget: number; name: string; color: string; kind: "INCOME" | "EXPENSE"; parentId: string | null }>();
   for (const b of budgets) {
     if (!b.category) continue;
     if (!isBudgetActiveOn(b, ref)) continue;
     const monthly = Math.round(budgetAnnualCents(b.amount, b.period) / 12);
     const prev = perCat.get(b.category.id);
     if (prev) prev.monthlyBudget += monthly;
-    else perCat.set(b.category.id, { monthlyBudget: monthly, name: b.category.name, color: b.category.color, kind: b.category.kind });
+    else perCat.set(b.category.id, { monthlyBudget: monthly, name: b.category.name, color: b.category.color, kind: b.category.kind, parentId: b.category.parentId });
   }
 
   const rows: BudgetStatusRow[] = [...perCat.entries()].map(([categoryId, c]) => {
@@ -650,11 +665,20 @@ export async function getBudgetStatus(monthOffset = 0): Promise<BudgetStatus> {
       // Einnahmen: Zielerreichung ist gut.
       status = projectedPct >= 1 ? "over" : projectedPct >= 0.6 ? "warn" : "ok";
     }
-    return { categoryId, name: c.name, color: c.color, kind: c.kind, monthlyBudget, actual, projected, pct, projectedPct, status };
+    return { categoryId, name: c.name, color: c.color, kind: c.kind, parentId: c.parentId, monthlyBudget, actual, projected, pct, projectedPct, status };
   });
 
   const expenseRows = rows.filter((r) => r.kind === "EXPENSE");
+  // Nur die Überkategorien laden, die von diesen Zeilen tatsächlich belegt sind.
+  const parentIds = [...new Set(rows.map((r) => r.parentId).filter((x): x is string => !!x))];
+  const groupCats = parentIds.length
+    ? await prisma.category.findMany({
+        where: { id: { in: parentIds } },
+        select: { id: true, name: true, kind: true, color: true, parentId: true, isGroup: true },
+      })
+    : [];
   return {
+    groups: groupCats,
     monthLabel: `${MONTHS_LONG[monthStart.getUTCMonth()]} ${monthStart.getUTCFullYear()}`,
     daysElapsed,
     daysInMonth,

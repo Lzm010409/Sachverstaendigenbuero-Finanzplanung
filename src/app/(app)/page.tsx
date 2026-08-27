@@ -250,7 +250,7 @@ export default async function DashboardPage({
             <SummaryRow label="Nettoveränderung" values={months.map((m) => m.net)} months={months} />
             <SummaryRow label="Liquidität Ende" values={months.map((m) => m.endLiquidity)} months={months} strong />
           </tbody>
-          <PivotSections months={months} incomeRows={matrix.incomeRows} expenseRows={matrix.expenseRows} />
+          <PivotSections months={months} incomeRows={matrix.incomeRows} expenseRows={matrix.expenseRows} categories={matrix.categories} />
         </table>
       </div>
 

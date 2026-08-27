@@ -1,5 +1,6 @@
 import { cache } from "react";
 import { prisma } from "./db";
+import type { CatNode } from "./category-tree";
 import {
   buildForecast,
   type ForecastOneOff,
@@ -165,6 +166,8 @@ export interface PlanActualRow {
 export async function getPlanVsActual(monthOffset = 0): Promise<{
   monthStart: Date;
   rows: PlanActualRow[];
+  /** Kategorien inkl. Überkategorie-Zuordnung – für die gruppierte Anzeige. */
+  categories: CatNode[];
 }> {
   const today = todayUTC();
   const monthStart = startOfDayUTC(
@@ -237,5 +240,11 @@ export async function getPlanVsActual(monthOffset = 0): Promise<{
     });
   }
   rows.sort((a, b) => a.categoryName.localeCompare(b.categoryName));
-  return { monthStart, rows };
+  return {
+    monthStart,
+    rows,
+    categories: categories.map((c) => ({
+      id: c.id, name: c.name, kind: c.kind, color: c.color, parentId: c.parentId, isGroup: c.isGroup,
+    })),
+  };
 }

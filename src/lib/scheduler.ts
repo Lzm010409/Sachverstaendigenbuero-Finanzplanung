@@ -4,6 +4,7 @@
 // GENAU EINMAL pro Woche versendet wird – auch über Neustarts hinweg.
 
 import { prisma } from "./db";
+import { log, fehlerText } from "./logger";
 
 const CHECK_INTERVAL_MS = 30 * 60 * 1000; // alle 30 Minuten prüfen
 let started = false;
@@ -49,7 +50,7 @@ async function runDailySyncIfDue(): Promise<void> {
     const last = lastStr ? new Date(lastStr) : null;
     if (last && last.getTime() >= scheduled.getTime()) return;
 
-    console.log("[scheduler] Täglicher Sync startet…");
+    log.info("scheduler_sync_start");
     const { syncSevdesk, syncSevdeskDocuments, syncPipedrive } = await import("@/app/actions/settings");
     const steps: [string, () => Promise<unknown>][] = [
       ["Umsätze", syncSevdesk],
@@ -59,11 +60,11 @@ async function runDailySyncIfDue(): Promise<void> {
     for (const [name, fn] of steps) {
       try {
         await fn();
-        console.log(`[scheduler] Sync ${name}: ok`);
+        log.info("scheduler_sync_step", { step: name, status: "ok" });
       } catch (e) {
         // Die Datenpersistenz erfolgt vor revalidatePath; ein Fehler hier (z.B.
         // revalidate außerhalb des Request-Kontexts) beeinträchtigt den Sync nicht.
-        console.log(`[scheduler] Sync ${name}: ${(e as Error).message}`);
+        log.warn("scheduler_sync_step", { step: name, status: "fehler", grund: fehlerText(e) });
       }
     }
     // Einmal pro Tag markieren (Best-Effort), damit nicht alle 30 min erneut läuft.
@@ -72,9 +73,9 @@ async function runDailySyncIfDue(): Promise<void> {
       create: { key: "sync.lastDailyRun", value: now.toISOString() },
       update: { value: now.toISOString() },
     });
-    console.log(`[scheduler] Täglicher Sync fertig (${now.toISOString()}).`);
+    log.info("scheduler_sync_done");
   } catch (e) {
-    console.log("[scheduler] Täglicher Sync Fehler:", (e as Error).message);
+    log.error("scheduler_sync_error", { grund: fehlerText(e) });
   }
 }
 
@@ -83,9 +84,9 @@ async function purgeExpiredCategories(): Promise<void> {
   try {
     const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const res = await prisma.category.deleteMany({ where: { deletedAt: { lt: cutoff } } });
-    if (res.count > 0) console.log(`[scheduler] ${res.count} abgelaufene Kategorie(n) endgültig gelöscht.`);
+    if (res.count > 0) log.info("scheduler_categories_purged", { anzahl: res.count });
   } catch (e) {
-    console.log("[scheduler] Kategorie-Bereinigung Fehler:", (e as Error).message);
+    log.error("scheduler_purge_error", { grund: fehlerText(e) });
   }
 }
 
@@ -116,20 +117,20 @@ async function tick(): Promise<void> {
         create: { key: "notify.lastWeeklySent", value: now.toISOString() },
         update: { value: now.toISOString() },
       });
-      console.log(`[scheduler] Wochenbericht versendet (${now.toISOString()}).`);
+      log.info("scheduler_weekly_sent");
     } else if (res.attempted) {
-      console.log(`[scheduler] Versand fehlgeschlagen: ${res.reason}`);
+      log.warn("scheduler_weekly_failed", { grund: res.reason ?? null });
     }
     // res.attempted === false (kein Empfänger/SMTP) -> still & ohne Markierung.
   } catch (e) {
-    console.log("[scheduler] Fehler:", (e as Error).message);
+    log.error("scheduler_error", { grund: fehlerText(e) });
   }
 }
 
 export function startScheduler(): void {
   if (started) return;
   started = true;
-  console.log("[scheduler] Scheduler aktiv: Wochenversand + täglicher Datenabgleich (Prüfung alle 30 min).");
+  log.info("scheduler_started", { intervalMin: 30 });
   // Erste Prüfung leicht verzögert (Server-Start abwarten).
   setTimeout(() => void tick(), 60 * 1000);
   const timer = setInterval(() => void tick(), CHECK_INTERVAL_MS);

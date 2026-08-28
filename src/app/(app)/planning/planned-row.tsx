@@ -1,0 +1,175 @@
+"use client";
+
+import { useState } from "react";
+import { deletePlannedItem, togglePlannedItem, updatePlannedItem } from "@/app/actions/planning";
+import { plannedToBudget } from "@/app/actions/convert";
+import { CategoryOptions, type CatOpt } from "@/components/category-select";
+import { TransferMenu } from "@/components/transfer-menu";
+import { formatCents } from "@/lib/money";
+
+const RHYTHM: Record<string, string> = {
+  ONCE: "einmalig",
+  WEEKLY: "wöchentlich",
+  MONTHLY: "monatlich",
+  QUARTERLY: "quartalsweise",
+  YEARLY: "jährlich",
+};
+
+// Einheit für „alle N …" (Intervall = jede/r n-te). Singular/Plural.
+const UNIT: Record<string, [string, string]> = {
+  WEEKLY: ["Woche", "Wochen"],
+  MONTHLY: ["Monat", "Monate"],
+  QUARTERLY: ["Quartal", "Quartale"],
+  YEARLY: ["Jahr", "Jahre"],
+};
+
+/** Klarer Rhythmus-Text: „wöchentlich" bzw. bei Intervall>1 „alle N Wochen". */
+export function rhythmLabel(recurrence: string, interval: number): string {
+  if (recurrence === "ONCE") return RHYTHM.ONCE;
+  const n = Math.max(1, Math.floor(interval || 1));
+  if (n === 1) return RHYTHM[recurrence] ?? recurrence;
+  const unit = UNIT[recurrence];
+  return unit ? `alle ${n} ${n === 1 ? unit[0] : unit[1]}` : `${RHYTHM[recurrence]} (×${n})`;
+}
+
+export interface PlannedRowData {
+  id: string;
+  name: string;
+  amount: number; // Cent, vorzeichenbehaftet
+  recurrence: string;
+  interval: number;
+  startDate: string; // ISO
+  endDate: string | null; // ISO
+  categoryId: string | null;
+  categoryName: string | null;
+  active: boolean;
+}
+
+const day = (iso: string | null) => (iso ? iso.slice(0, 10) : "");
+const euro = (cents: number) => (Math.abs(cents) / 100).toFixed(2).replace(".", ",");
+
+// Status eines Planposten für die Anzeige. „vergangen" = einmaliger Posten mit
+// Datum in der Vergangenheit (bereits eingetreten, i.d.R. durch echte Umsätze
+// gedeckt). „abgelaufen" = wiederkehrender Posten, dessen Enddatum vorbei ist.
+// Beide erzeugen keine künftigen Fälligkeiten mehr und beeinflussen die
+// Prognose nicht – werden hier nur klar gekennzeichnet.
+function rowStatus(item: PlannedRowData): { label: string; cls: string } | null {
+  const todayIso = new Date().toISOString().slice(0, 10);
+  if (!item.active) return { label: "pausiert", cls: "bg-slate-100 text-slate-500" };
+  if (item.recurrence === "ONCE" && item.startDate.slice(0, 10) < todayIso)
+    return { label: "vergangen", cls: "bg-slate-100 text-slate-500" };
+  if (item.recurrence !== "ONCE" && item.endDate && item.endDate.slice(0, 10) < todayIso)
+    return { label: "abgelaufen", cls: "bg-slate-100 text-slate-500" };
+  return null;
+}
+
+export function PlannedRow({ item, categories }: { item: PlannedRowData; categories: CatOpt[] }) {
+  const [editing, setEditing] = useState(false);
+  const status = rowStatus(item);
+
+  if (editing) {
+    return (
+      <tr className="border-b border-slate-100 bg-brand/5">
+        <td className="td" colSpan={6}>
+          <form
+            action={async (fd) => {
+              fd.set("id", item.id);
+              await updatePlannedItem(fd);
+              setEditing(false);
+            }}
+            className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          >
+            <div className="lg:col-span-2">
+              <label className="label">Bezeichnung</label>
+              <input name="name" defaultValue={item.name} className="input" required />
+            </div>
+            <div>
+              <label className="label">Richtung</label>
+              <select name="direction" className="input" defaultValue={item.amount < 0 ? "out" : "in"}>
+                <option value="in">Einzahlung (+)</option>
+                <option value="out">Auszahlung (−)</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Betrag (€)</label>
+              <input name="amount" defaultValue={euro(item.amount)} className="input" inputMode="decimal" required />
+            </div>
+            <div>
+              <label className="label">Rhythmus</label>
+              <select name="recurrence" className="input" defaultValue={item.recurrence}>
+                <option value="ONCE">einmalig</option>
+                <option value="WEEKLY">wöchentlich</option>
+                <option value="MONTHLY">monatlich</option>
+                <option value="QUARTERLY">quartalsweise</option>
+                <option value="YEARLY">jährlich</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Intervall (jede/r n-te)</label>
+              <input name="interval" type="number" min={1} defaultValue={item.interval} className="input" />
+              <p className="mt-1 text-xs text-slate-400">
+                1 = jede Periode. „wöchentlich" + 4 = alle 4 Wochen.
+              </p>
+            </div>
+            <div>
+              <label className="label">Ab Datum</label>
+              <input name="startDate" type="date" defaultValue={day(item.startDate)} className="input" required />
+            </div>
+            <div>
+              <label className="label">Bis (optional)</label>
+              <input name="endDate" type="date" defaultValue={day(item.endDate)} className="input" />
+            </div>
+            <div>
+              <label className="label">Kategorie (optional)</label>
+              <select name="categoryId" className="input" defaultValue={item.categoryId ?? ""}>
+                <option value="">—</option>
+                <CategoryOptions categories={categories} />
+              </select>
+            </div>
+            <div className="flex items-end gap-2 sm:col-span-2 lg:col-span-3">
+              <button type="submit" className="btn-primary px-3 py-1.5 text-sm">Speichern</button>
+              <button type="button" className="btn-secondary px-3 py-1.5 text-sm" onClick={() => setEditing(false)}>
+                Abbrechen
+              </button>
+            </div>
+          </form>
+        </td>
+      </tr>
+    );
+  }
+
+  const pastOneOff = status?.label === "vergangen" || status?.label === "abgelaufen";
+  return (
+    <tr className={`border-b border-slate-50 ${item.active && !pastOneOff ? "" : "opacity-60"}`}>
+      <td className="td font-medium">
+        {item.name}
+        {status && <span className={`badge ml-2 ${status.cls}`}>{status.label}</span>}
+        {item.categoryName && <span className="ml-2 text-xs text-slate-400">{item.categoryName}</span>}
+      </td>
+      <td className="td">{rhythmLabel(item.recurrence, item.interval)}</td>
+      <td className="td">{new Date(item.startDate).toLocaleDateString("de-DE")}</td>
+      <td className="td">{item.endDate ? new Date(item.endDate).toLocaleDateString("de-DE") : "offen"}</td>
+      <td className={`td text-right font-semibold ${item.amount < 0 ? "text-red-600" : "text-emerald-600"}`}>
+        {formatCents(item.amount)}
+      </td>
+      <td className="td">
+        <div className="flex items-center justify-end gap-3 text-xs">
+          <button className="text-brand hover:underline" onClick={() => setEditing(true)}>
+            bearbeiten
+          </button>
+          <TransferMenu id={item.id} label="Budget" action={plannedToBudget} />
+          <form action={togglePlannedItem}>
+            <input type="hidden" name="id" value={item.id} />
+            <button className="text-xs text-slate-400 hover:text-brand">
+              {item.active ? "pausieren" : "aktivieren"}
+            </button>
+          </form>
+          <form action={deletePlannedItem}>
+            <input type="hidden" name="id" value={item.id} />
+            <button className="text-xs text-slate-400 hover:text-red-600">löschen</button>
+          </form>
+        </div>
+      </td>
+    </tr>
+  );
+}

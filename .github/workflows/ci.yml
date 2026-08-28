@@ -1,0 +1,52 @@
+name: CI
+
+# Qualitäts-Gate für jeden Push und Pull Request auf die Hauptzweige:
+# eingefrorene Installation, Lint, Typecheck, Tests und Produktions-Build.
+# Entspricht der Definition of Done (Linting/Tests/Build als stehende Schranke).
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+
+# Ältere Läufe desselben Zweigs abbrechen, sobald ein neuer startet.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Node einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Eingefrorene, reproduzierbare Installation (kein Lockfile-Rewrite).
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      # Prisma-Client wird für den Typecheck/Build gebraucht.
+      - name: Prisma-Client generieren
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Tests
+        run: npm test
+
+      - name: Produktions-Build
+        run: npm run build
+        env:
+          # Build braucht keine echte DB; ein Platzhalter genügt, da zur
+          # Buildzeit nicht verbunden wird (alle Seiten sind force-dynamic).
+          DATABASE_URL: postgresql://user:pass@localhost:5432/db?schema=public
+          AUTH_SECRET: ci-platzhalter-geheimnis-mindestens-32-zeichen

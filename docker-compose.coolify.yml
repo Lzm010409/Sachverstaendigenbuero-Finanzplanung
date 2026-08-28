@@ -1,0 +1,75 @@
+# Coolify-Deployment (Docker Compose).
+# Nutzt Coolifys "Magic"-Umgebungsvariablen:
+#   SERVICE_FQDN_APP_3000     -> Coolify vergibt automatisch eine Domain + SSL für App-Port 3000
+#   SERVICE_PASSWORD_POSTGRES -> generiertes DB-Passwort (in app + db identisch eingesetzt)
+#   SERVICE_PASSWORD_APPLOGIN -> generiertes Login-Passwort der App
+#   SERVICE_BASE64_64_AUTHSECRET -> generiertes Cookie-Signaturgeheimnis
+# Für lokalen Betrieb bitte weiterhin docker-compose.yml verwenden.
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - SERVICE_FQDN_APP_3000
+      # DATABASE_URL wird in Coolify gesetzt und zeigt nach der Umschaltung auf
+      # die eigenständige Postgres. (Vorher zeigte sie inline auf den db-Dienst.)
+      - DATABASE_URL
+      # Quelle für den finalen, verlustfreien Abgleich unmittelbar vor der
+      # Umschaltung: die alte In-Compose-Datenbank (Passwort via Coolify-Magie).
+      - DB_COPY_SOURCE=postgresql://liqui:${SERVICE_PASSWORD_POSTGRES}@db:5432/liqui
+      - APP_PASSWORD=${SERVICE_PASSWORD_APPLOGIN}
+      - AUTH_SECRET=${SERVICE_BASE64_64_AUTHSECRET}
+      - AUTH_URL=${AUTH_URL:-https://finance.gollenstede.app}
+      - AUTH_TRUST_HOST=true
+      # Microsoft Entra ID (SSO) – in Coolify unter Environment Variables setzen:
+      - AUTH_MICROSOFT_ENTRA_ID_ID=${AUTH_MICROSOFT_ENTRA_ID_ID:-}
+      - AUTH_MICROSOFT_ENTRA_ID_SECRET=${AUTH_MICROSOFT_ENTRA_ID_SECRET:-}
+      - AUTH_MICROSOFT_ENTRA_ID_ISSUER=${AUTH_MICROSOFT_ENTRA_ID_ISSUER:-}
+      - NODE_ENV=production
+      # Einmaliger Datenumzug (scripts/db-copy.sh): läuft nur, wenn DB_COPY=1 und
+      # DB_COPY_TARGET gesetzt sind. Quelle ist DB_COPY_SOURCE (alte db), Ziel die
+      # eigenständige Postgres. Nach erfolgreicher Umschaltung wieder entfernen.
+      - DB_COPY
+      - DB_COPY_TARGET
+    # An das vordefinierte Coolify-Netz anschließen, damit der Container die
+    # eigenständige Postgres (Resource-UUID als Hostname) auflösen kann. Der
+    # Compose-Stack läuft sonst in einem isolierten Projektnetz.
+    networks:
+      - default
+      - coolify
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=liqui
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=liqui
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U liqui -d liqui"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:
+
+networks:
+  # Von Coolify verwaltetes, geteiltes Netz (extern). Hier hängt auch die
+  # eigenständige Postgres, damit sie per Resource-UUID erreichbar ist.
+  coolify:
+    external: true

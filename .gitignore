@@ -4,9 +4,18 @@ out
 build
 .env
 .env*.local
+
+# Zertifikate / private Schlüssel dürfen nie ins Repo
+*.pem
+*.key
+*.p12
+*.pfx
 *.log
 npm-debug.log*
 .DS_Store
 coverage
 prisma/dev.db
 next-env.d.ts
+
+# TypeScript incremental build info
+tsconfig.tsbuildinfo

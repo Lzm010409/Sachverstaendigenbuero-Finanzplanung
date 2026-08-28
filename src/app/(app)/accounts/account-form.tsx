@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef } from "react";
 import { createAccount } from "@/app/actions/accounts";
+import { useActionToast } from "@/components/action-toaster";
 
 export function AccountForm() {
   const formRef = useRef<HTMLFormElement>(null);
@@ -13,9 +14,10 @@ export function AccountForm() {
   useEffect(() => {
     if (state?.ok) formRef.current?.reset();
   }, [state]);
+  useActionToast(state, "Konto angelegt");
 
   return (
-    <form ref={formRef} action={action} className="grid gap-3 sm:grid-cols-2">
+    <form ref={formRef} action={action} data-no-toast className="grid gap-3 sm:grid-cols-2">
       <div className="sm:col-span-2">
         <label className="label">Kontoname</label>
         <input name="name" className="input" placeholder="z.B. Geschäftskonto Sparkasse" required />

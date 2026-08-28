@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { ImportForm } from "./import-form";
+import { FinbanForm } from "./finban-form";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,15 @@ export default async function ImportPage() {
           <ImportForm accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} />
         </div>
       )}
+
+      <div className="card">
+        <h2 className="mb-1 text-sm font-semibold text-slate-700">finban.io-Import</h2>
+        <p className="mb-4 text-xs text-slate-400">
+          Direkter Import eines finban-Transaktionsexports – legt Konten, Kategorien und geplante
+          Posten automatisch an. Ideal für den Umstieg von finban.
+        </p>
+        <FinbanForm />
+      </div>
 
       <div className="card text-sm text-slate-600">
         <h2 className="mb-2 font-semibold text-slate-700">Unterstützte Formate</h2>

@@ -32,8 +32,8 @@ export function ForecastChart({ points }: { points: ChartPoint[] }) {
         <AreaChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
           <defs>
             <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#0f766e" stopOpacity={0.35} />
-              <stop offset="95%" stopColor="#0f766e" stopOpacity={0.02} />
+              <stop offset="5%" stopColor="#007FFF" stopOpacity={0.35} />
+              <stop offset="95%" stopColor="#007FFF" stopOpacity={0.02} />
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
@@ -62,7 +62,7 @@ export function ForecastChart({ points }: { points: ChartPoint[] }) {
           <Area
             type="monotone"
             dataKey="eur"
-            stroke="#0f766e"
+            stroke="#007FFF"
             strokeWidth={2}
             fill="url(#fill)"
           />

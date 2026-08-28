@@ -4,7 +4,12 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
 import { parseStatement, type ImportFormat } from "@/lib/import";
 import { importHash } from "@/lib/import/hash";
-import { categorize } from "@/lib/categorize";
+import { categorize, toMatchableRule } from "@/lib/categorize";
+
+// Begrenzt Textlängen, damit Umsatzfelder den Speicher nicht unnötig aufblähen.
+function clip(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) : s;
+}
 
 export interface ImportSummary {
   error?: string;
@@ -34,40 +39,35 @@ export async function importStatement(formData: FormData): Promise<ImportSummary
     return { error: "Keine Umsätze erkannt.", warnings: result.warnings, format: result.format };
   }
 
-  const rules = await prisma.rule.findMany({ where: { active: true } });
+  const rules = (
+    await prisma.rule.findMany({ where: { active: true, category: { deletedAt: null } } })
+  ).map(toMatchableRule);
+
+  let categorized = 0;
+  // Datensätze im Speicher vorbereiten (Text begrenzen, kategorisieren) und
+  // per createMany in Blöcken einfügen – speicher- und WAL-schonend; Duplikate
+  // werden über den Unique-Index (importHash) übersprungen.
+  const data = result.transactions.map((tx) => {
+    const categoryId = categorize({ ...tx, accountId }, rules);
+    if (categoryId) categorized++;
+    return {
+      accountId,
+      bookingDate: tx.bookingDate,
+      valueDate: tx.valueDate ?? null,
+      amount: tx.amount,
+      counterparty: clip(tx.counterparty, 120),
+      purpose: clip(tx.purpose, 180),
+      importHash: importHash(accountId, tx),
+      categoryId,
+    };
+  });
 
   let imported = 0;
-  let duplicates = 0;
-  let categorized = 0;
-
-  for (const tx of result.transactions) {
-    const hash = importHash(accountId, tx);
-    const categoryId = categorize(tx, rules);
-    try {
-      await prisma.transaction.create({
-        data: {
-          accountId,
-          bookingDate: tx.bookingDate,
-          valueDate: tx.valueDate ?? null,
-          amount: tx.amount,
-          counterparty: tx.counterparty,
-          purpose: tx.purpose,
-          importHash: hash,
-          categoryId,
-          raw: tx.raw ?? null,
-        },
-      });
-      imported++;
-      if (categoryId) categorized++;
-    } catch (e) {
-      // Unique-Constraint auf importHash => Duplikat, still überspringen
-      if (typeof e === "object" && e && "code" in e && (e as { code: string }).code === "P2002") {
-        duplicates++;
-      } else {
-        throw e;
-      }
-    }
+  for (let i = 0; i < data.length; i += 500) {
+    const res = await prisma.transaction.createMany({ data: data.slice(i, i + 500), skipDuplicates: true });
+    imported += res.count;
   }
+  const duplicates = data.length - imported;
 
   revalidatePath("/transactions");
   revalidatePath("/");

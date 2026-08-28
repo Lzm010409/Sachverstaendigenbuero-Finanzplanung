@@ -1,0 +1,2 @@
+# Platzhalter, damit das (optionale) Next.js public/-Verzeichnis existiert
+# und der Docker-Build (COPY /app/public) nicht fehlschlägt.

@@ -1,20 +1,28 @@
 "use client";
 
-import { useActionState, useEffect, useRef } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { createPlannedItem } from "@/app/actions/planning";
+import { CategoryOptions, type CatOpt } from "@/components/category-select";
+import { useActionToast } from "@/components/action-toaster";
 
-export function PlannedForm({ categories }: { categories: { id: string; name: string }[] }) {
+export function PlannedForm({ categories }: { categories: CatOpt[] }) {
   const ref = useRef<HTMLFormElement>(null);
+  const [rec, setRec] = useState("MONTHLY");
+  const once = rec === "ONCE";
   const [state, action, pending] = useActionState(
     async (_p: { error?: string; ok?: boolean }, fd: FormData) => createPlannedItem(fd),
     {},
   );
   useEffect(() => {
-    if (state?.ok) ref.current?.reset();
+    if (state?.ok) {
+      ref.current?.reset();
+      setRec("MONTHLY");
+    }
   }, [state]);
+  useActionToast(state, "Planposten angelegt");
 
   return (
-    <form ref={ref} action={action} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <form ref={ref} action={action} data-no-toast className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       <div className="lg:col-span-2">
         <label className="label">Bezeichnung</label>
         <input name="name" className="input" placeholder="z.B. Büromiete, Gehalt, Steuer-VZ" required />
@@ -32,35 +40,38 @@ export function PlannedForm({ categories }: { categories: { id: string; name: st
       </div>
       <div>
         <label className="label">Rhythmus</label>
-        <select name="recurrence" className="input" defaultValue="MONTHLY">
-          <option value="ONCE">einmalig</option>
+        <select name="recurrence" className="input" value={rec} onChange={(e) => setRec(e.target.value)}>
+          <option value="ONCE">einmalig (datumsgenau)</option>
           <option value="WEEKLY">wöchentlich</option>
           <option value="MONTHLY">monatlich</option>
           <option value="QUARTERLY">quartalsweise</option>
           <option value="YEARLY">jährlich</option>
         </select>
       </div>
+      {!once && (
+        <div>
+          <label className="label">Intervall (jede/r n-te)</label>
+          <input name="interval" type="number" min={1} defaultValue={1} className="input" />
+          <p className="mt-1 text-xs text-slate-400">
+            1 = jede Periode. Beispiel: „wöchentlich" + 4 = <strong>alle 4 Wochen</strong> (nicht 4× pro Woche).
+          </p>
+        </div>
+      )}
       <div>
-        <label className="label">Intervall (jede/r n-te)</label>
-        <input name="interval" type="number" min={1} defaultValue={1} className="input" />
-      </div>
-      <div>
-        <label className="label">Ab Datum</label>
+        <label className="label">{once ? "Datum" : "Ab Datum"}</label>
         <input name="startDate" type="date" className="input" required />
       </div>
-      <div>
-        <label className="label">Bis (optional)</label>
-        <input name="endDate" type="date" className="input" />
-      </div>
+      {!once && (
+        <div>
+          <label className="label">Bis (optional)</label>
+          <input name="endDate" type="date" className="input" />
+        </div>
+      )}
       <div>
         <label className="label">Kategorie (optional)</label>
         <select name="categoryId" className="input" defaultValue="">
           <option value="">—</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
+          <CategoryOptions categories={categories} />
         </select>
       </div>
       {state?.error && <p className="text-sm text-red-600 sm:col-span-2 lg:col-span-3">{state.error}</p>}

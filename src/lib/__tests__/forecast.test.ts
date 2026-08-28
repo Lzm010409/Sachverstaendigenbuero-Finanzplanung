@@ -3,6 +3,29 @@ import { buildForecast } from "../forecast";
 
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
+describe("buildForecast Invarianten", () => {
+  it("Endsaldo = Start + Zuflüsse − Abflüsse; jeder Tag = Vortag + Zu − Ab", () => {
+    const res = buildForecast({
+      startBalanceCents: 1_000_000,
+      today: d("2026-03-01"),
+      horizonDays: 120,
+      plannedItems: [
+        { amount: 250000, recurrence: "MONTHLY", interval: 1, startDate: d("2026-03-05") },
+        { amount: -80000, recurrence: "WEEKLY", interval: 1, startDate: d("2026-03-02") },
+      ],
+      oneOffs: [
+        { date: d("2026-03-10"), amount: 500000 },
+        { date: d("2026-04-15"), amount: -300000 },
+      ],
+    });
+    const start = res.points[0].balance - res.points[0].inflow + res.points[0].outflow;
+    expect(start + res.totalInflow - res.totalOutflow).toBe(res.endBalance);
+    for (let i = 1; i < res.points.length; i++) {
+      expect(res.points[i - 1].balance + res.points[i].inflow - res.points[i].outflow).toBe(res.points[i].balance);
+    }
+  });
+});
+
 describe("buildForecast", () => {
   it("projiziert Saldo mit einer monatlichen Ausgabe", () => {
     const res = buildForecast({
@@ -42,6 +65,86 @@ describe("buildForecast", () => {
     expect(res.lowest.balance).toBe(10000);
     expect(res.lowest.date).toBe("2026-08-10");
     expect(res.endBalance).toBe(210000);
+  });
+
+  it("berücksichtigt offene Posten (Einmal-Events)", () => {
+    const res = buildForecast({
+      startBalanceCents: 100000,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [],
+      oneOffs: [
+        { date: d("2026-08-10"), amount: 50000 }, // Forderung
+        { date: d("2026-08-20"), amount: -30000 }, // Verbindlichkeit
+      ],
+    });
+    expect(res.totalInflow).toBe(50000);
+    expect(res.totalOutflow).toBe(30000);
+    expect(res.endBalance).toBe(120000);
+  });
+
+  it("setzt überfällige offene Posten auf heute an", () => {
+    const res = buildForecast({
+      startBalanceCents: 0,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [],
+      oneOffs: [{ date: d("2026-07-15"), amount: 20000 }], // überfällig
+    });
+    expect(res.points[0].inflow).toBe(20000);
+    expect(res.points[0].balance).toBe(20000);
+  });
+
+  it("wendet Szenario-Faktoren an (Worst Case)", () => {
+    const res = buildForecast({
+      startBalanceCents: 100000,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [
+        { amount: 100000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-05") },
+        { amount: -50000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-06") },
+      ],
+      scenario: { inflowFactor: 0.8, outflowFactor: 1.2, inflowShiftDays: 0 },
+    });
+    expect(res.totalInflow).toBe(80000); // 100k * 0.8
+    expect(res.totalOutflow).toBe(60000); // 50k * 1.2
+    expect(res.endBalance).toBe(120000); // 100k + 80k - 60k
+  });
+
+  it("wendet kategoriespezifische Faktoren an (überschreiben global)", () => {
+    const res = buildForecast({
+      startBalanceCents: 0,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [
+        { amount: 100000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-05"), categoryId: "honorar" },
+        { amount: 100000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-06"), categoryId: "sonstige" },
+        { amount: -50000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-07"), categoryId: "miete" },
+      ],
+      scenario: {
+        inflowFactor: 1,
+        outflowFactor: 1,
+        inflowShiftDays: 0,
+        // Honorare halbieren, Miete verdoppeln; "sonstige" bleibt global (×1)
+        categoryFactors: { honorar: 0.5, miete: 2 },
+      },
+    });
+    expect(res.totalInflow).toBe(150000); // 100k*0.5 + 100k*1
+    expect(res.totalOutflow).toBe(100000); // 50k*2
+    expect(res.endBalance).toBe(50000);
+  });
+
+  it("verschiebt Zuflüsse per Szenario-Zahlungsverzug", () => {
+    const res = buildForecast({
+      startBalanceCents: 0,
+      today: d("2026-08-01"),
+      horizonDays: 30,
+      plannedItems: [{ amount: 10000, recurrence: "ONCE", interval: 1, startDate: d("2026-08-05") }],
+      scenario: { inflowFactor: 1, outflowFactor: 1, inflowShiftDays: 10 },
+    });
+    // Zufluss wandert von 05.08 auf 15.08
+    expect(res.points.find((p) => p.date === "2026-08-05")?.inflow).toBe(0);
+    expect(res.points.find((p) => p.date === "2026-08-15")?.inflow).toBe(10000);
   });
 
   it("kombiniert mehrere Einträge an einem Tag", () => {

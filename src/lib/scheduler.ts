@@ -1,0 +1,139 @@
+// In-Process-Scheduler für den wöchentlichen Liquiditätsbericht. Läuft im
+// langlebigen Server-Prozess (gestartet über instrumentation.ts). Der
+// Versandzeitpunkt wird über eine DB-Einstellung (Setting) gemerkt, damit
+// GENAU EINMAL pro Woche versendet wird – auch über Neustarts hinweg.
+
+import { prisma } from "./db";
+import { log, fehlerText } from "./logger";
+
+const CHECK_INTERVAL_MS = 30 * 60 * 1000; // alle 30 Minuten prüfen
+let started = false;
+
+async function getSetting(key: string): Promise<string | null> {
+  const s = await prisma.setting.findUnique({ where: { key } });
+  return s?.value ?? null;
+}
+
+/**
+ * Letzter geplanter Versandzeitpunkt (Wochentag/Stunde in UTC), der <= now ist.
+ * Beispiel: Montag 06:00 UTC. Wenn das diese Woche noch nicht war, die
+ * Vorwoche.
+ */
+function lastScheduledOccurrence(now: Date, weekday: number, hourUtc: number): Date {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUtc, 0, 0));
+  const dayDiff = (d.getUTCDay() - weekday + 7) % 7;
+  d.setUTCDate(d.getUTCDate() - dayDiff);
+  if (d.getTime() > now.getTime()) d.setUTCDate(d.getUTCDate() - 7);
+  return d;
+}
+
+/** Letzter täglicher Termin (Stunde in UTC), der <= now ist. */
+function lastDailyOccurrence(now: Date, hourUtc: number): Date {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hourUtc, 0, 0));
+  if (d.getTime() > now.getTime()) d.setUTCDate(d.getUTCDate() - 1);
+  return d;
+}
+
+/**
+ * Täglicher Datenabgleich: zieht neue Umsätze und Belege aus sevDesk sowie
+ * Kontakte aus Pipedrive – genau einmal pro Tag (über Setting gemerkt, auch über
+ * Neustarts hinweg). Fehler einzelner Quellen brechen den Lauf nicht ab.
+ */
+async function runDailySyncIfDue(): Promise<void> {
+  try {
+    // Standardmäßig aktiv (nur ausgeschaltet, wenn explizit "false").
+    if ((await getSetting("sync.dailyEnabled")) === "false") return;
+    const hourUtc = Number((await getSetting("sync.dailyHour")) ?? "4"); // 04:00 UTC ≈ 05/06 Uhr DE
+    const now = new Date();
+    const scheduled = lastDailyOccurrence(now, hourUtc);
+    const lastStr = await getSetting("sync.lastDailyRun");
+    const last = lastStr ? new Date(lastStr) : null;
+    if (last && last.getTime() >= scheduled.getTime()) return;
+
+    log.info("scheduler_sync_start");
+    const { syncSevdesk, syncSevdeskDocuments, syncPipedrive } = await import("@/app/actions/settings");
+    const steps: [string, () => Promise<unknown>][] = [
+      ["Umsätze", syncSevdesk],
+      ["Belege", syncSevdeskDocuments],
+      ["Kontakte", syncPipedrive],
+    ];
+    for (const [name, fn] of steps) {
+      try {
+        await fn();
+        log.info("scheduler_sync_step", { step: name, status: "ok" });
+      } catch (e) {
+        // Die Datenpersistenz erfolgt vor revalidatePath; ein Fehler hier (z.B.
+        // revalidate außerhalb des Request-Kontexts) beeinträchtigt den Sync nicht.
+        log.warn("scheduler_sync_step", { step: name, status: "fehler", grund: fehlerText(e) });
+      }
+    }
+    // Einmal pro Tag markieren (Best-Effort), damit nicht alle 30 min erneut läuft.
+    await prisma.setting.upsert({
+      where: { key: "sync.lastDailyRun" },
+      create: { key: "sync.lastDailyRun", value: now.toISOString() },
+      update: { value: now.toISOString() },
+    });
+    log.info("scheduler_sync_done");
+  } catch (e) {
+    log.error("scheduler_sync_error", { grund: fehlerText(e) });
+  }
+}
+
+// Soft-gelöschte Kategorien nach 30 Tagen endgültig entfernen.
+async function purgeExpiredCategories(): Promise<void> {
+  try {
+    const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const res = await prisma.category.deleteMany({ where: { deletedAt: { lt: cutoff } } });
+    if (res.count > 0) log.info("scheduler_categories_purged", { anzahl: res.count });
+  } catch (e) {
+    log.error("scheduler_purge_error", { grund: fehlerText(e) });
+  }
+}
+
+async function tick(): Promise<void> {
+  await purgeExpiredCategories();
+  await runDailySyncIfDue();
+  try {
+    const enabled = (await getSetting("notify.weekly")) === "true";
+    if (!enabled) return;
+    const weekday = Number((await getSetting("notify.weeklyDay")) ?? "1"); // 1 = Montag
+    const hourUtc = Number((await getSetting("notify.weeklyHour")) ?? "6"); // 06:00 UTC ≈ 07/08 Uhr DE
+    const now = new Date();
+    const scheduled = lastScheduledOccurrence(now, weekday, hourUtc);
+
+    const lastSentStr = await getSetting("notify.lastWeeklySent");
+    const lastSent = lastSentStr ? new Date(lastSentStr) : null;
+    // Fällig, wenn der letzte geplante Termin noch nicht bedient wurde.
+    if (lastSent && lastSent.getTime() >= scheduled.getTime()) return;
+
+    const { buildDigest, sendDigestEmail } = await import("./notifications");
+    const digest = await buildDigest();
+    const res = await sendDigestEmail(digest);
+    // Nur bei erfolgreichem Versand als "erledigt" markieren, damit ein fehlendes
+    // SMTP nicht dazu führt, dass die Woche als versendet gilt.
+    if (res.sent) {
+      await prisma.setting.upsert({
+        where: { key: "notify.lastWeeklySent" },
+        create: { key: "notify.lastWeeklySent", value: now.toISOString() },
+        update: { value: now.toISOString() },
+      });
+      log.info("scheduler_weekly_sent");
+    } else if (res.attempted) {
+      log.warn("scheduler_weekly_failed", { grund: res.reason ?? null });
+    }
+    // res.attempted === false (kein Empfänger/SMTP) -> still & ohne Markierung.
+  } catch (e) {
+    log.error("scheduler_error", { grund: fehlerText(e) });
+  }
+}
+
+export function startScheduler(): void {
+  if (started) return;
+  started = true;
+  log.info("scheduler_started", { intervalMin: 30 });
+  // Erste Prüfung leicht verzögert (Server-Start abwarten).
+  setTimeout(() => void tick(), 60 * 1000);
+  const timer = setInterval(() => void tick(), CHECK_INTERVAL_MS);
+  // Timer darf den Prozess nicht am Beenden hindern.
+  if (typeof timer.unref === "function") timer.unref();
+}

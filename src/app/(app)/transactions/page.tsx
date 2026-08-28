@@ -1,24 +1,47 @@
 import Link from "next/link";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { GROUP_PREFIX } from "@/lib/category-tree";
 import { formatCents } from "@/lib/money";
-import { deleteTransaction } from "@/app/actions/transactions";
-import { TxCategorySelect } from "./tx-category-select";
+import { Pagination, clampPageSize } from "@/components/pagination";
+import { PageAlerts } from "@/components/page-alerts";
+import { TransactionsTable, type TxRow } from "./transactions-table";
+import type { CatOpt } from "@/components/category-select";
+import { FilterMemory, ClearFiltersLink, AutoFilterForm } from "@/components/filter-memory";
+import { CategoryOptions, CategoryFilterOptions } from "@/components/category-select";
 
 export const dynamic = "force-dynamic";
-
-const PAGE_SIZE = 50;
 
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string; state?: string; page?: string; q?: string }>;
+  searchParams: Promise<{ account?: string; state?: string; page?: string; q?: string; size?: string; cat?: string; sort?: string; dir?: string }>;
 }) {
   const sp = await searchParams;
   const page = Math.max(1, Number(sp.page) || 1);
-  const where: Prisma.TransactionWhereInput = {};
+  const pageSize = clampPageSize(sp.size);
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const sortMap: Record<string, Prisma.TransactionOrderByWithRelationInput> = {
+    bookingDate: { bookingDate: dir },
+    counterparty: { counterparty: dir },
+    account: { account: { name: dir } },
+    category: { category: { name: dir } },
+    amount: { amount: dir },
+  };
+  // Umsätze archivierter Konten werden nicht mehr gelistet (sie zählen ohnehin
+  // nicht in die Berechnungen). Endgültig entfernen: Konten-Seite.
+  const where: Prisma.TransactionWhereInput = { account: { archived: false } };
   if (sp.account) where.accountId = sp.account;
-  if (sp.state === "uncategorized") where.categoryId = null;
+  // Kategorie-Filter: "none" = nicht zugeordnet, sonst konkrete Kategorie-ID.
+  if (sp.cat === "none" || sp.state === "uncategorized") where.categoryId = null;
+  else if (sp.cat?.startsWith(GROUP_PREFIX)) {
+    // Ganze Überkategorie: über alle zugehörigen Kindkategorien filtern.
+    const kinder = await prisma.category.findMany({
+      where: { parentId: sp.cat.slice(GROUP_PREFIX.length) },
+      select: { id: true },
+    });
+    where.categoryId = { in: kinder.map((k) => k.id) };
+  } else if (sp.cat) where.categoryId = sp.cat;
   if (sp.q) {
     where.OR = [
       { counterparty: { contains: sp.q, mode: "insensitive" } },
@@ -29,34 +52,47 @@ export default async function TransactionsPage({
   const [transactions, totalCount, accounts, categories] = await Promise.all([
     prisma.transaction.findMany({
       where,
-      orderBy: { bookingDate: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
+      // Stabiler Zweitschlüssel (id), damit Umsätze desselben Tages ihre
+      // Reihenfolge über Neuladen/Kategorisieren behalten und nicht springen.
+      orderBy: sp.sort && sortMap[sp.sort] ? [sortMap[sp.sort], { id: "desc" }] : [{ bookingDate: "desc" }, { id: "desc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       include: { account: true, category: true },
     }),
     prisma.transaction.count({ where }),
     prisma.account.findMany({ where: { archived: false }, orderBy: { name: "asc" } }),
-    prisma.category.findMany({ orderBy: { name: "asc" } }),
+    prisma.category.findMany({ where: { deletedAt: null }, orderBy: [{ kind: "asc" }, { name: "asc" }] }),
   ]);
 
-  const pages = Math.ceil(totalCount / PAGE_SIZE);
-  const catOptions = categories.map((c) => ({ id: c.id, name: c.name }));
+  const pages = Math.ceil(totalCount / pageSize);
+  const catOptions: CatOpt[] = categories.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup }));
+  const rows: TxRow[] = transactions.map((t) => ({
+    id: t.id,
+    dateLabel: new Date(t.bookingDate).toLocaleDateString("de-DE"),
+    counterparty: t.counterparty,
+    purpose: t.purpose,
+    accountName: t.account.name,
+    categoryId: t.categoryId,
+    amountLabel: formatCents(t.amount),
+    negative: t.amount < 0,
+  }));
 
-  const qs = (patch: Record<string, string | undefined>) => {
-    const params = new URLSearchParams();
-    const merged = { account: sp.account, state: sp.state, q: sp.q, ...patch };
-    for (const [k, v] of Object.entries(merged)) if (v) params.set(k, v);
-    return `?${params.toString()}`;
-  };
+  const hasFilter = !!(sp.account || sp.state || sp.q || sp.cat);
+  const sizeParam = pageSize !== 50 ? String(pageSize) : undefined;
+  const filterParams = { account: sp.account, state: sp.state, q: sp.q, cat: sp.cat, size: sizeParam };
+  const pageParams = { ...filterParams, sort: sp.sort, dir: sp.dir };
 
   return (
     <div className="space-y-6">
+      <FilterMemory pageKey="/transactions" />
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-slate-900">Umsätze</h1>
         <span className="text-sm text-slate-500">{totalCount} Buchungen</span>
       </div>
 
-      <form className="card flex flex-wrap items-end gap-3" method="get">
+      <PageAlerts page="/transactions" />
+
+      <AutoFilterForm pageKey="/transactions" className="card flex flex-wrap items-end gap-3">
         <div>
           <label className="label">Konto</label>
           <select name="account" defaultValue={sp.account ?? ""} className="input w-auto">
@@ -69,20 +105,23 @@ export default async function TransactionsPage({
           </select>
         </div>
         <div>
-          <label className="label">Status</label>
-          <select name="state" defaultValue={sp.state ?? ""} className="input w-auto">
+          <label className="label">Kategorie</label>
+          <select name="cat" defaultValue={sp.cat ?? ""} className="input w-auto">
             <option value="">alle</option>
-            <option value="uncategorized">nicht zugeordnet</option>
+            <option value="none">nicht zugeordnet</option>
+            <CategoryFilterOptions categories={catOptions} />
           </select>
         </div>
         <div className="min-w-[180px] flex-1">
           <label className="label">Suche</label>
           <input name="q" defaultValue={sp.q ?? ""} className="input" placeholder="Zweck / Gegenpartei" />
         </div>
-        <button className="btn-secondary" type="submit">
-          Filtern
-        </button>
-      </form>
+        {hasFilter && (
+          <ClearFiltersLink pageKey="/transactions" basePath="/transactions" className="px-2 py-2 text-sm text-slate-400 hover:text-slate-600">
+            zurücksetzen
+          </ClearFiltersLink>
+        )}
+      </AutoFilterForm>
 
       <div className="card">
         {transactions.length === 0 ? (
@@ -94,69 +133,24 @@ export default async function TransactionsPage({
             .
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="th">Datum</th>
-                  <th className="th">Gegenpartei / Zweck</th>
-                  <th className="th">Konto</th>
-                  <th className="th">Kategorie</th>
-                  <th className="th text-right">Betrag</th>
-                  <th className="th"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {transactions.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-50 align-top">
-                    <td className="td whitespace-nowrap">
-                      {new Date(t.bookingDate).toLocaleDateString("de-DE")}
-                    </td>
-                    <td className="td max-w-sm">
-                      <div className="font-medium text-slate-800">{t.counterparty || "—"}</div>
-                      <div className="truncate text-xs text-slate-400">{t.purpose}</div>
-                    </td>
-                    <td className="td whitespace-nowrap text-xs text-slate-500">{t.account.name}</td>
-                    <td className="td">
-                      <TxCategorySelect txId={t.id} current={t.categoryId} categories={catOptions} />
-                    </td>
-                    <td
-                      className={`td whitespace-nowrap text-right font-semibold ${t.amount < 0 ? "text-red-600" : "text-emerald-600"}`}
-                    >
-                      {formatCents(t.amount)}
-                    </td>
-                    <td className="td text-right">
-                      <form action={deleteTransaction}>
-                        <input type="hidden" name="id" value={t.id} />
-                        <button className="text-xs text-slate-300 hover:text-red-600">×</button>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <TransactionsTable
+            transactions={rows}
+            categories={catOptions}
+            filterCategoryId={sp.cat === "none" || sp.state === "uncategorized" ? "none" : sp.cat || undefined}
+            sort={sp.sort ?? ""}
+            dir={dir}
+            sortParams={filterParams}
+          />
         )}
 
-        {pages > 1 && (
-          <div className="mt-4 flex items-center justify-between text-sm">
-            <span className="text-slate-500">
-              Seite {page} / {pages}
-            </span>
-            <div className="flex gap-2">
-              {page > 1 && (
-                <Link className="btn-secondary" href={qs({ page: String(page - 1) })}>
-                  ← Zurück
-                </Link>
-              )}
-              {page < pages && (
-                <Link className="btn-secondary" href={qs({ page: String(page + 1) })}>
-                  Weiter →
-                </Link>
-              )}
-            </div>
-          </div>
-        )}
+        <Pagination
+          page={page}
+          totalPages={pages}
+          totalItems={totalCount}
+          pageSize={pageSize}
+          basePath="/transactions"
+          params={pageParams}
+        />
       </div>
     </div>
   );

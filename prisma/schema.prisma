@@ -23,6 +23,15 @@ enum CategoryKind {
   EXPENSE
 }
 
+// Rhythmus, in dem ein Kategorie-Budget erfasst/angezeigt wird. Intern bleibt
+// der Jahreswert (annualBudget) die Normalisierung.
+enum BudgetPeriod {
+  WEEKLY
+  MONTHLY
+  QUARTERLY
+  YEARLY
+}
+
 enum Recurrence {
   ONCE
   WEEKLY
@@ -31,9 +40,37 @@ enum Recurrence {
   YEARLY
 }
 
-enum RuleField {
-  COUNTERPARTY // Empfänger/Auftraggeber
-  PURPOSE // Verwendungszweck
+enum OpenItemKind {
+  RECEIVABLE // Forderung (wir erhalten Geld)
+  PAYABLE // Verbindlichkeit (wir zahlen)
+}
+
+// Einfacher Schlüssel-Wert-Speicher für App-Einstellungen (Integrationen etc.).
+// Hier werden u.a. Integrations-Zugangsdaten (Token/Domain) abgelegt.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+enum ContactType {
+  PERSON
+  ORG
+}
+
+// Aus Pipedrive synchronisierter Kontakt (Person oder Organisation).
+model Contact {
+  id         String      @id @default(cuid())
+  source     String      @default("pipedrive")
+  externalId String
+  type       ContactType
+  name       String
+  email      String?
+  orgName    String?
+  updatedAt  DateTime    @updatedAt
+
+  @@unique([source, externalId])
+  @@index([name])
 }
 
 model Account {
@@ -41,6 +78,12 @@ model Account {
   name           String
   type           AccountType   @default(CHECKING)
   iban           String?
+  // Externe ID zur Zuordnung bei Integrationen (z.B. sevDesk CheckAccount-ID).
+  externalId     String?
+  source         String? // Herkunft, z.B. "sevdesk"
+  // Wenn true: Konto bleibt sichtbar/synchronisiert, zählt aber NICHT in
+  // Saldo, Forecast, Auswertung und Kennzahlen (z.B. Dummy-/Nebenkonten).
+  excludedFromCalc Boolean     @default(false)
   currency       String        @default("EUR")
   // Anfangssaldo in Cent zum Startdatum (alles davor ist im Saldo bereits enthalten)
   openingBalance Int           @default(0)
@@ -58,28 +101,76 @@ model Category {
   name         String
   kind         CategoryKind
   color        String        @default("#64748b")
+  // Überkategorie ("Klammer") zur Bündelung mehrerer Kategorien. Genau eine
+  // Ebene: eine Überkategorie hat selbst keinen parentId.
   parentId     String?
   parent       Category?     @relation("CategoryTree", fields: [parentId], references: [id], onDelete: SetNull)
   children     Category[]    @relation("CategoryTree")
+  // true = Überkategorie. Sie ist reine Gliederung und NICHT bebuchbar: keine
+  // Umsätze, Regeln, Planposten, offenen Posten oder Budgets zeigen auf sie.
+  // Ihre Summen ergeben sich ausschließlich aus den Kindkategorien.
+  isGroup      Boolean       @default(false)
   rules        Rule[]
   transactions Transaction[]
   plannedItems PlannedItem[]
+  openItems    OpenItem[]
+  budgets      Budget[]
+  scenarioAdjustments ScenarioCategoryAdjustment[]
+  // Neutral / durchlaufend: Konto-zu-Konto-Transfers (Geldtransfer). Solche
+  // Umsätze zählen NICHT als Einnahme/Ausgabe (über alle Konten netto null),
+  // bleiben aber im Kontostand. Steuern sind KEIN Transfer (echter Abfluss).
+  isTransfer   Boolean       @default(false)
   createdAt    DateTime      @default(now())
+  // Soft-Delete: gesetzt = gelöscht (30 Tage wiederherstellbar, danach endgültig).
+  deletedAt    DateTime?
 
   @@index([kind])
+  @@index([deletedAt])
+  @@index([parentId])
+}
+
+// Budget / geplante Ausgabe – bewusst von der Kategorie ENTKOPPELT (eigenes
+// Objekt mit Titel, Betrag, Rhythmus und optionalem Gültigkeitszeitraum). Die
+// Verknüpfung zu einer Kategorie ist optional; mehrere Budgets je Kategorie sind
+// möglich. Betrag wird je Periode (period) erfasst und positiv gespeichert.
+model Budget {
+  id          String       @id @default(cuid())
+  title       String
+  kind        CategoryKind
+  amount      Int          @default(0) // Cent, positiv, je Periode
+  period      BudgetPeriod @default(MONTHLY)
+  startDate   DateTime? // Gültig ab (optional)
+  endDate     DateTime? // Gültig bis (optional)
+  categoryId  String?
+  category    Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  note        String?
+  active      Boolean      @default(true)
+  // Wenn true: fließt als wiederkehrender Planposten (im Rhythmus, innerhalb des
+  // Zeitraums) in die Liquiditätsprognose ein. Standard aus, um Doppelzählung mit
+  // echten Umsätzen/Planposten zu vermeiden.
+  includeInForecast Boolean @default(false)
+  createdAt   DateTime     @default(now())
+  // Soft-Delete: 30 Tage wiederherstellbar, danach endgültig.
+  deletedAt   DateTime?
+
+  @@index([kind])
+  @@index([categoryId])
+  @@index([active])
+  @@index([deletedAt])
 }
 
 // Regel zur automatischen Kategorisierung importierter Umsätze.
+// Die Bedingung ist ein verschachtelter Ausdrucks-Baum (UND/ODER/NICHT +
+// Einzelbedingungen), gespeichert als JSON. Struktur/Auswertung: src/lib/rule-expr.ts.
 model Rule {
-  id         String    @id @default(cuid())
-  categoryId String
-  category   Category  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  field      RuleField @default(PURPOSE)
-  // Freitext, der (case-insensitive) im Feld enthalten sein muss. Optional als /regex/.
-  pattern    String
-  priority   Int       @default(100) // kleiner = wird zuerst geprüft
-  active     Boolean   @default(true)
-  createdAt  DateTime  @default(now())
+  id          String   @id @default(cuid())
+  categoryId  String
+  category    Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  // Bedingungs-Baum (Group/Condition). Null = inaktive/leere Regel (greift nie).
+  conditions  Json?
+  priority    Int      @default(100) // kleiner = wird zuerst geprüft
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
 
   @@index([active, priority])
 }
@@ -97,7 +188,6 @@ model Transaction {
   category     Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   // Deduplizierung beim Import: Hash aus Konto+Datum+Betrag+Zweck+Gegenpartei
   importHash   String    @unique
-  raw          String? // Original-Zeile/-Feld zur Nachvollziehbarkeit
   createdAt    DateTime  @default(now())
 
   @@index([accountId, bookingDate])
@@ -122,4 +212,163 @@ model PlannedItem {
   createdAt   DateTime    @default(now())
 
   @@index([active])
+}
+
+// Offener Posten: unbezahlte Forderung/Verbindlichkeit mit Fälligkeit.
+// Fließt bis zur Bezahlung als erwarteter Zu-/Abfluss in die Vorschau ein.
+model OpenItem {
+  id           String       @id @default(cuid())
+  kind         OpenItemKind
+  counterparty String       @default("")
+  reference    String? // z.B. Rechnungsnummer
+  externalId   String? // ID im Quellsystem (z.B. sevDesk)
+  source       String? // Herkunft, z.B. "sevdesk-invoice" / "sevdesk-voucher"
+  amount       Int // Cent, immer positiv (Bruttobetrag); Richtung ergibt sich aus kind
+  paidAmount   Int          @default(0) // bereits bezahlter Anteil in Cent (Teilzahlung)
+  issueDate    DateTime?
+  dueDate      DateTime
+  paid         Boolean      @default(false)
+  paidDate     DateTime?
+  // Mahnstufe (0 = keine, 1 = Zahlungserinnerung, 2 = 1. Mahnung, 3 = 2. Mahnung/Inkasso)
+  reminderLevel Int         @default(0)
+  categoryId   String?
+  category     Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  note         String?
+  createdAt    DateTime     @default(now())
+
+  @@unique([source, externalId])
+  @@index([paid, dueDate])
+}
+
+// Monatlicher Forecast-Snapshot: Zum Monatsanfang wird die für ein Zieldatum
+// prognostizierte Liquidität festgehalten. Später wird der Ist-Wert nachgetragen,
+// um die Prognosegüte auszuwerten.
+model ForecastSnapshot {
+  id                  String   @id @default(cuid())
+  takenOn             DateTime @default(now()) // wann der Snapshot erstellt wurde
+  targetMonth         String // Zielmonat "YYYY-MM"
+  horizonDays         Int // Prognosehorizont in Tagen
+  projectedLiquidity  Int // prognostizierte Liquidität (Cent) für den Zielmonat
+  actualLiquidity     Int? // tatsächliche Liquidität (Cent), nachgetragen
+  createdAt           DateTime @default(now())
+
+  @@unique([targetMonth, horizonDays])
+  @@index([takenOn])
+}
+
+// Im Tool gelöschte sevDesk-Posten. Der Beleg-Sync überspringt diese dauerhaft,
+// damit sie nicht wieder importiert werden (z. B. „Belegleichen", die in sevDesk
+// nicht mehr gelöscht werden können).
+model IgnoredSevItem {
+  id           String   @id @default(cuid())
+  source       String // z.B. "sevdesk-invoice" / "sevdesk-voucher"
+  externalId   String // ID im Quellsystem
+  reference    String?
+  counterparty String?
+  createdAt    DateTime @default(now())
+
+  @@unique([source, externalId])
+}
+
+// --- OAuth 2.1 (App-eigener Authorization Server für den MCP-Connector) ---------
+// Die App ist ihr eigener OAuth-Server. claude.ai registriert sich dynamisch
+// (DCR, RFC 7591) als öffentlicher Client und nutzt Authorization-Code + PKCE.
+// Zugriffstokens sind signierte JWTs (HS256), Refresh-Tokens werden hier als
+// Hash abgelegt. Kein Client-Secret (öffentlicher Client, token_auth = none).
+
+model OAuthClient {
+  id                      String   @id @default(cuid())
+  clientName              String?
+  // Erlaubte Redirect-URIs (JSON-Array als String).
+  redirectUris            String
+  // token_endpoint_auth_method, i.d.R. "none" (öffentlicher Client + PKCE).
+  tokenEndpointAuthMethod String   @default("none")
+  grantTypes              String   @default("authorization_code,refresh_token")
+  scope                   String?
+  createdAt               DateTime @default(now())
+
+  codes  OAuthCode[]
+  tokens OAuthToken[]
+}
+
+// Kurzlebiger Authorization-Code (Single-Use, ~10 min) inkl. PKCE-Challenge.
+model OAuthCode {
+  id                  String      @id @default(cuid())
+  code                String      @unique
+  clientId            String
+  client              OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  redirectUri         String
+  scope               String      @default("")
+  codeChallenge       String
+  codeChallengeMethod String      @default("S256")
+  resource            String?
+  expiresAt           DateTime
+  consumedAt          DateTime?
+  createdAt           DateTime    @default(now())
+
+  @@index([expiresAt])
+}
+
+// Refresh-Token (als SHA-256-Hash gespeichert). Zugriffstokens sind zustandslose
+// JWTs und werden NICHT gespeichert.
+model OAuthToken {
+  id             String      @id @default(cuid())
+  refreshHash    String      @unique
+  clientId       String
+  client         OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  scope          String      @default("")
+  resource       String?
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@index([expiresAt])
+}
+
+// Szenario zur Simulation (Best/Base/Worst). Wirkt multiplikativ auf geplante
+// Zu-/Abflüsse und offene Posten und kann Zuflüsse zeitlich verzögern.
+model Scenario {
+  id                 String                       @id @default(cuid())
+  name               String
+  inflowFactor       Float                        @default(1.0) // globaler Faktor auf Zuflüsse
+  outflowFactor      Float                        @default(1.0) // globaler Faktor auf Abflüsse
+  inflowShiftDays    Int                          @default(0) // Zuflüsse um n Tage nach hinten schieben
+  isDefault          Boolean                      @default(false)
+  categoryAdjustments ScenarioCategoryAdjustment[]
+  createdAt          DateTime                     @default(now())
+}
+
+// Kategoriespezifischer Faktor innerhalb eines Szenarios (überschreibt den
+// globalen Faktor für Beträge dieser Kategorie).
+model ScenarioCategoryAdjustment {
+  id         String   @id @default(cuid())
+  scenarioId String
+  scenario   Scenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  factor     Float    @default(1.0)
+
+  @@unique([scenarioId, categoryId])
+}
+
+// Benutzerdefinierte Kennzahl/Widget: kombiniert eine Metrik über gefilterte
+// Umsätze mit einem Zeitraum und einer Darstellungsart (Zahl/Balken/Linie/Kreis).
+model CustomKpi {
+  id              String   @id @default(cuid())
+  name            String
+  metric          String   @default("net")     // net|income|expense|volume|count|avg
+  categoryIds     String[]                      // leer = alle Kategorien
+  rangeKind       String   @default("ytd")      // mtd|last_month|ytd|last_year|last_30d|last_90d|rolling_12m|custom
+  customFrom      DateTime?
+  customTo        DateTime?
+  display         String   @default("number")   // number|bar|line|pie
+  groupBy         String   @default("none")     // none|month|week|category
+  size            String   @default("md")       // sm|md|lg|xl (Kachelgröße)
+  compare         Boolean  @default(false)      // Vergleich zur Vorperiode (nur Zahl)
+  showOnDashboard Boolean  @default(false)
+  showOnReport    Boolean  @default(false)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([sortOrder])
 }

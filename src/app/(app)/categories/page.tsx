@@ -1,99 +1,419 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { deleteCategory, deleteRule } from "@/app/actions/categories";
-import { ApplyRulesButton, CategoryForm, RuleForm } from "./category-forms";
+import { deleteCategory, purgeCategory, restoreCategory, toggleCategoryTransfer } from "@/app/actions/categories";
+import { ApplyRulesButton, CategoryForm, CategoryGroupForm, GroupSuggestion, ParentSelect, ResetCategoriesButton, RuleForm, type CatOption } from "./category-forms";
+import { schlageUeberkategorienVor } from "@/lib/category-group-suggest";
+import { GroupTableSection, Chevron, StopClick } from "@/components/category-group";
+import { groupRowsByCategoryGroup, sumBy, type CatNode } from "@/lib/category-tree";
+import { RuleRow } from "./rule-row";
+import type { AccountOpt } from "./rule-builder";
+import { isValidTree, type Node } from "@/lib/rule-expr";
+import { ConfirmSubmit } from "@/components/confirm-submit";
+import { SortableTh } from "@/components/sortable-th";
 
 export const dynamic = "force-dynamic";
 
-const FIELD_LABEL: Record<string, string> = {
-  PURPOSE: "Verwendungszweck",
-  COUNTERPARTY: "Gegenpartei",
+const RETENTION_DAYS = 30;
+
+type CatRow = {
+  id: string;
+  name: string;
+  kind: "INCOME" | "EXPENSE";
+  color: string;
+  isTransfer: boolean;
+  parentId: string | null;
+  isGroup: boolean;
+  _count: { transactions: number; budgets: number };
 };
 
-export default async function CategoriesPage() {
-  const [categories, rules] = await Promise.all([
+/** localStorage-Schlüssel für den Aufklapp-Zustand auf dieser Seite. */
+const STORE_KEY = "cat:open:categories";
+
+/** Eine Kategoriezeile (auch als Kind einer Überkategorie verwendbar). */
+function CategoryRow({
+  c,
+  groups,
+  indent,
+}: {
+  c: CatRow;
+  groups: CatNode[];
+  indent?: boolean;
+}) {
+  return (
+    <tr className="border-b border-slate-50">
+      <td className={`td font-medium ${indent ? "pl-8" : ""}`}>
+        <span className="mr-2 inline-block h-3 w-3 rounded-full align-middle" style={{ backgroundColor: c.color }} />
+        {c.name}
+        {c.isTransfer && <span className="badge ml-2 bg-slate-100 text-slate-500">neutral · Transfer</span>}
+      </td>
+      <td className="td text-right text-slate-500">{c._count.transactions}</td>
+      <td className="td text-right text-slate-500">
+        {c._count.budgets > 0 ? (
+          <Link href="/budgets" className="text-brand hover:underline">{c._count.budgets}</Link>
+        ) : (
+          <span className="text-slate-300">–</span>
+        )}
+      </td>
+      <td className="td">
+        <ParentSelect id={c.id} parentId={c.parentId} groups={groups.filter((g) => g.kind === c.kind)} />
+      </td>
+      <td className="td text-right">
+        <div className="flex items-center justify-end gap-3">
+          <form action={toggleCategoryTransfer}>
+            <input type="hidden" name="id" value={c.id} />
+            <button className="text-xs text-slate-400 hover:text-brand" title="Als neutralen Geldtransfer markieren (zählt nicht als Ein-/Ausgabe)">
+              {c.isTransfer ? "kein Transfer" : "als Transfer"}
+            </button>
+          </form>
+          <form action={deleteCategory}>
+            <input type="hidden" name="id" value={c.id} />
+            <button className="text-xs text-slate-400 hover:text-red-600" title="in den Papierkorb">
+              löschen
+            </button>
+          </form>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function CategoryTable({
+  title,
+  rows,
+  groups,
+  tone,
+  sort,
+  dir,
+}: {
+  title: string;
+  rows: CatRow[];
+  groups: CatNode[];
+  tone: "in" | "out";
+  sort: string;
+  dir: "asc" | "desc";
+}) {
+  // Kategorien ihren Überkategorien zuordnen; Zeilen ohne Überkategorie
+  // landen in einem eigenen Block ganz unten.
+  const grouped = groupRowsByCategoryGroup(rows, (r) => r.id, withParents(rows, groups));
+  // Noch leere Überkategorien ergänzen – sonst wäre eine gerade angelegte
+  // Überkategorie nirgends sichtbar und nicht mehr löschbar.
+  const belegt = new Set(grouped.map((g) => g.group?.id).filter(Boolean));
+  const leere = groups
+    .filter((g) => g.kind === (tone === "in" ? "INCOME" : "EXPENSE") && !belegt.has(g.id))
+    .sort((a, b) => a.name.localeCompare(b.name, "de"))
+    .map((g) => ({ group: g, rows: [] as CatRow[] }));
+  const alle = [...grouped.filter((g) => g.group), ...leere, ...grouped.filter((g) => !g.group)];
+  return (
+    <div>
+      <h3 className={`mb-2 text-xs font-semibold uppercase tracking-wide ${tone === "in" ? "text-emerald-700" : "text-red-700"}`}>
+        {title} <span className="text-slate-400">({rows.length})</span>
+      </h3>
+      {rows.length === 0 ? (
+        <p className="text-sm text-slate-400">Keine {tone === "in" ? "Einnahme" : "Ausgabe"}-Kategorien.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                <SortableTh col="name" label="Kategorie" sort={sort} dir={dir} basePath="/categories" />
+                <SortableTh col="transactions" label="Umsätze" sort={sort} dir={dir} basePath="/categories" align="right" />
+                <SortableTh col="budgets" label="Budgets" sort={sort} dir={dir} basePath="/categories" align="right" />
+                <th className="th">Überkategorie</th>
+                <th className="th"></th>
+              </tr>
+            </thead>
+            {alle.map((g) =>
+              g.group ? (
+                <GroupTableSection
+                  key={g.group.id}
+                  storeKey={STORE_KEY}
+                  groupId={g.group.id}
+                  header={
+                    <tr className="border-b border-slate-100 bg-slate-50/70">
+                      <td className="td font-semibold text-slate-800">
+                        <Chevron className="mr-2 align-middle" />
+                        <span
+                          className="mr-2 inline-block h-3 w-3 rounded-full align-middle"
+                          style={{ backgroundColor: g.group.color }}
+                        />
+                        {g.group.name}
+                        <span className="ml-2 text-xs font-normal text-slate-400">
+                          {g.rows.length} {g.rows.length === 1 ? "Kategorie" : "Kategorien"}
+                        </span>
+                      </td>
+                      <td className="td text-right font-semibold text-slate-700">
+                        {sumBy(g.rows, (r) => r._count.transactions)}
+                      </td>
+                      <td className="td text-right font-semibold text-slate-700">
+                        {sumBy(g.rows, (r) => r._count.budgets) || <span className="text-slate-300">–</span>}
+                      </td>
+                      <td className="td">
+                        <span className="badge bg-brand/10 text-brand">Überkategorie</span>
+                      </td>
+                      <td className="td text-right">
+                        <StopClick className="flex items-center justify-end gap-3">
+                          <form action={deleteCategory}>
+                            <input type="hidden" name="id" value={g.group.id} />
+                            <button
+                              className="text-xs text-slate-400 hover:text-red-600"
+                              title="Überkategorie auflösen – die enthaltenen Kategorien bleiben erhalten"
+                            >
+                              auflösen
+                            </button>
+                          </form>
+                        </StopClick>
+                      </td>
+                    </tr>
+                  }
+                >
+                  {g.rows.length === 0 ? (
+                    <tr>
+                      <td className="td pl-8 text-xs text-slate-400" colSpan={5}>
+                        Noch keine Kategorien zugeordnet – Zuordnung in der Spalte „Überkategorie".
+                      </td>
+                    </tr>
+                  ) : (
+                    g.rows.map((c) => <CategoryRow key={c.id} c={c} groups={groups} indent />)
+                  )}
+                </GroupTableSection>
+              ) : (
+                <tbody key="ohne">
+                  {g.rows.map((c) => (
+                    <CategoryRow key={c.id} c={c} groups={groups} />
+                  ))}
+                </tbody>
+              ),
+            )}
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Hilfsliste für die Zuordnung: Kategorien + Überkategorien als CatNode. */
+function withParents(rows: CatRow[], groups: CatNode[]): CatNode[] {
+  return [
+    ...rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      kind: r.kind,
+      color: r.color,
+      parentId: r.parentId,
+      isGroup: r.isGroup,
+    })),
+    ...groups,
+  ];
+}
+
+export default async function CategoriesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ sort?: string; dir?: string }>;
+}) {
+  const sp = await searchParams;
+  const [active, trashed, rules, accounts] = await Promise.all([
     prisma.category.findMany({
+      where: { deletedAt: null },
       orderBy: [{ kind: "asc" }, { name: "asc" }],
-      include: { _count: { select: { transactions: true } } },
+      include: { _count: { select: { transactions: true, budgets: true } } },
     }),
-    prisma.rule.findMany({ orderBy: { priority: "asc" }, include: { category: true } }),
+    prisma.category.findMany({
+      where: { deletedAt: { not: null } },
+      orderBy: { deletedAt: "asc" },
+      include: { _count: { select: { transactions: true, budgets: true } } },
+    }),
+    prisma.rule.findMany({ where: { category: { deletedAt: null } }, orderBy: { priority: "asc" }, include: { category: true } }),
+    prisma.account.findMany({ where: { archived: false }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
+
+  // Sortierung der Kategorien-Tabellen (im Speicher; gilt für Einnahmen +
+  // Ausgaben gleichermaßen). Standard: nach Name.
+  const dir: "asc" | "desc" = sp.dir === "desc" ? "desc" : "asc";
+  const mul = dir === "asc" ? 1 : -1;
+  const catSortVal: Record<string, (c: CatRow) => number | string> = {
+    name: (c) => c.name.toLowerCase(),
+    transactions: (c) => c._count.transactions,
+    budgets: (c) => c._count.budgets,
+  };
+  const sortCats = (rows: CatRow[]) =>
+    sp.sort && catSortVal[sp.sort]
+      ? [...rows].sort((a, b) => {
+          const va = catSortVal[sp.sort!](a);
+          const vb = catSortVal[sp.sort!](b);
+          return va < vb ? -1 * mul : va > vb ? 1 * mul : 0;
+        })
+      : rows;
+
+  // Überkategorien sind reine Gliederung – sie erscheinen als Klammer, nicht
+  // als eigene Zeile in der Kategorieliste.
+  const groups: CatNode[] = active
+    .filter((c) => c.isGroup)
+    .map((c) => ({ id: c.id, name: c.name, kind: c.kind, color: c.color, parentId: c.parentId, isGroup: true }));
+  const leaves = active.filter((c) => !c.isGroup);
+  const income = sortCats(leaves.filter((c) => c.kind === "INCOME"));
+  const expense = sortCats(leaves.filter((c) => c.kind === "EXPENSE"));
+  const catOptions: CatOption[] = active.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup }));
+  // Vorschlag für Überkategorien aus den vorhandenen Kategorienamen ableiten.
+  // Wird nur angezeigt, solange es etwas zu gruppieren gibt.
+  const vorschlaege = schlageUeberkategorienVor(
+    active.map((c) => ({ id: c.id, name: c.name, kind: c.kind, parentId: c.parentId, isGroup: c.isGroup })),
+  );
+  const accountOptions: AccountOpt[] = accounts.map((a) => ({ id: a.id, name: a.name }));
+  const now = Date.now();
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-slate-900">Kategorien &amp; Regeln</h1>
 
-      <div className="card">
-        <h2 className="mb-4 text-sm font-semibold text-slate-700">Neue Kategorie</h2>
-        <CategoryForm />
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="card">
+          <h2 className="mb-4 text-sm font-semibold text-slate-700">Neue Kategorie</h2>
+          <CategoryForm groups={groups} />
+        </div>
+        <div className="card">
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">Neue Überkategorie</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Bündelt mehrere Kategorien zu einer Klammer. Auf eine Überkategorie wird nichts gebucht –
+            keine Umsätze, Regeln, Planposten oder Budgets. Ihre Summe ergibt sich aus den enthaltenen
+            Kategorien.
+          </p>
+          <CategoryGroupForm />
+        </div>
       </div>
 
-      <div className="card">
-        <h2 className="mb-3 text-sm font-semibold text-slate-700">Kategorien</h2>
-        {categories.length === 0 ? (
+      {vorschlaege.length > 0 && (
+        <div className="card">
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">Vorschlag: Überkategorien</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Aus den vorhandenen Kategorienamen abgeleitet. Nichts wird überschrieben – bereits
+            zugeordnete Kategorien bleiben, wo sie sind. Nach dem Übernehmen lässt sich jede
+            Zuordnung in der Tabelle unten einzeln ändern.
+          </p>
+          <GroupSuggestion vorschlaege={vorschlaege} />
+        </div>
+      )}
+
+      <div className="card space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-700">Kategorien</h2>
+          <Link href="/budgets" className="text-xs text-brand hover:underline">Budgets verwalten →</Link>
+        </div>
+        {active.length === 0 ? (
           <p className="text-sm text-slate-400">Noch keine Kategorien.</p>
         ) : (
-          <div className="flex flex-wrap gap-2">
-            {categories.map((c) => (
-              <div
-                key={c.id}
-                className="flex items-center gap-2 rounded-full border border-slate-200 py-1 pl-2 pr-1 text-sm"
-              >
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: c.color }} />
-                <span>{c.name}</span>
-                <span className="text-xs text-slate-400">
-                  {c.kind === "INCOME" ? "Einnahme" : "Ausgabe"} · {c._count.transactions}
-                </span>
-                <form action={deleteCategory}>
-                  <input type="hidden" name="id" value={c.id} />
-                  <button className="rounded-full px-1 text-slate-400 hover:text-red-600" title="löschen">
-                    ×
-                  </button>
-                </form>
-              </div>
-            ))}
-          </div>
+          <>
+            <CategoryTable title="Einnahmen" rows={income} groups={groups} tone="in" sort={sp.sort ?? ""} dir={dir} />
+            <CategoryTable title="Ausgaben" rows={expense} groups={groups} tone="out" sort={sp.sort ?? ""} dir={dir} />
+          </>
         )}
       </div>
 
+      {trashed.length > 0 && (
+        <div className="card">
+          <h2 className="mb-1 text-sm font-semibold text-slate-700">Papierkorb</h2>
+          <p className="mb-3 text-xs text-slate-400">
+            Gelöschte Kategorien werden nach {RETENTION_DAYS} Tagen automatisch endgültig entfernt. Bis
+            dahin wiederherstellbar. Umsätze gelöschter Kategorien gelten vorübergehend als „ohne Kategorie".
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
+                  <th className="th">Kategorie</th>
+                  <th className="th">Art</th>
+                  <th className="th">verbleibend</th>
+                  <th className="th text-right"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {trashed.map((c) => {
+                  const daysLeft = Math.max(
+                    0,
+                    RETENTION_DAYS - Math.floor((now - new Date(c.deletedAt!).getTime()) / 86_400_000),
+                  );
+                  return (
+                    <tr key={c.id} className="border-b border-slate-50 opacity-70">
+                      <td className="td font-medium">
+                        <span className="mr-2 inline-block h-3 w-3 rounded-full align-middle" style={{ backgroundColor: c.color }} />
+                        {c.name}
+                      </td>
+                      <td className="td">{c.kind === "INCOME" ? "Einnahme" : "Ausgabe"}</td>
+                      <td className="td">
+                        <span className={`badge ${daysLeft <= 3 ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"}`}>
+                          noch {daysLeft} Tage
+                        </span>
+                      </td>
+                      <td className="td">
+                        <div className="flex items-center justify-end gap-4">
+                          <form action={restoreCategory}>
+                            <input type="hidden" name="id" value={c.id} />
+                            <button className="text-xs text-brand hover:underline">wiederherstellen</button>
+                          </form>
+                          <ConfirmSubmit
+                            action={purgeCategory}
+                            hidden={{ id: c.id }}
+                            confirm={`Kategorie „${c.name}" endgültig löschen? Zugehörige Regeln werden mit entfernt, Umsätze verlieren die Zuordnung.`}
+                          >
+                            endgültig löschen
+                          </ConfirmSubmit>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="card">
         <h2 className="mb-3 text-sm font-semibold text-slate-700">Auto-Kategorisierungs-Regeln</h2>
-        {categories.length === 0 ? (
+        {active.length === 0 ? (
           <p className="text-sm text-slate-400">Zuerst eine Kategorie anlegen.</p>
         ) : (
           <div className="space-y-4">
-            <RuleForm categories={categories.map((c) => ({ id: c.id, name: c.name }))} />
+            <RuleForm categories={catOptions} accounts={accountOptions} />
             {rules.length > 0 && (
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b border-slate-100">
+                    <tr className="border-b border-slate-100 text-xs uppercase tracking-wide text-slate-500">
                       <th className="th">Prio</th>
-                      <th className="th">Feld</th>
-                      <th className="th">Muster</th>
+                      <th className="th">Bedingung</th>
                       <th className="th">→ Kategorie</th>
                       <th className="th"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {rules.map((r) => (
-                      <tr key={r.id} className="border-b border-slate-50">
-                        <td className="td">{r.priority}</td>
-                        <td className="td">{FIELD_LABEL[r.field]}</td>
-                        <td className="td font-mono text-xs">{r.pattern}</td>
-                        <td className="td">{r.category.name}</td>
-                        <td className="td text-right">
-                          <form action={deleteRule}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <button className="text-xs text-slate-400 hover:text-red-600">löschen</button>
-                          </form>
-                        </td>
-                      </tr>
+                      <RuleRow
+                        key={r.id}
+                        rule={{
+                          id: r.id,
+                          conditions: isValidTree(r.conditions) ? (r.conditions as Node) : null,
+                          priority: r.priority,
+                          active: r.active,
+                          categoryId: r.categoryId,
+                          categoryName: r.category.name,
+                        }}
+                        categories={catOptions}
+                        accounts={accountOptions}
+                      />
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
             <ApplyRulesButton />
+            <div className="border-t border-slate-100 pt-3">
+              <ResetCategoriesButton />
+              <p className="mt-1 text-xs text-slate-400">
+                Setzt die Kategorie aller Umsätze zurück (die Umsätze bleiben erhalten). Einzelne
+                Umsätze kannst du auf der Seite <strong>Umsätze</strong> direkt umkategorisieren.
+              </p>
+            </div>
           </div>
         )}
       </div>
